@@ -1,0 +1,14 @@
+services:
+  koinori-app:
+    build: .
+    container_name: koinori-app
+    restart: unless-stopped
+    ports:
+      - "${HOST_PORT:-7085}:3000"
+    environment:
+      PORT: ${PORT:-3000}
+      ADMIN_KEY: ${ADMIN_KEY:-change-this-before-production}
+      TRUST_PROXY: ${TRUST_PROXY:-0}
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}
+    volumes:
+      - ${APP_DATA_DIR:-./data}:/app/data

@@ -1,0 +1,129 @@
+name: Deploy koinori
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: 10.10.0.1
+      SSH_USER: lsy
+      APP_DIR: /opt/protfolio/koinori
+      APP_DATA_DIR: /opt/protfolio/koinori/shared/data
+      APP_PORT: 7085
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify application
+        run: npm run verify
+
+      - name: Check deployment prerequisites
+        id: deploy_ready
+        env:
+          WG_CONFIG: ${{ secrets.WG_CONFIG }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+        run: |
+          if [[ -z "${WG_CONFIG}" || -z "${SERVER_SSH_KEY}" || -z "${ADMIN_KEY}" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "WireGuard or deploy secrets are missing. Skipping deployment steps."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install WireGuard tools
+        if: steps.deploy_ready.outputs.enabled == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wireguard-tools
+
+      - name: Configure WireGuard
+        if: steps.deploy_ready.outputs.enabled == 'true'
+        env:
+          WG_CONFIG: ${{ secrets.WG_CONFIG }}
+        run: |
+          umask 077
+          printf '%s\n' "${WG_CONFIG}" > ./wg-koinori.conf
+          sudo wg-quick up ./wg-koinori.conf
+
+      - name: Verify WireGuard SSH path
+        if: steps.deploy_ready.outputs.enabled == 'true'
+        run: |
+          nc -vz "${SSH_HOST}" 22
+
+      - name: Start SSH agent
+        if: steps.deploy_ready.outputs.enabled == 'true'
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SERVER_SSH_KEY }}
+
+      - name: Add server host key
+        if: steps.deploy_ready.outputs.enabled == 'true'
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${SSH_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Build release bundle
+        if: steps.deploy_ready.outputs.enabled == 'true'
+        run: |
+          tar \
+            --exclude=node_modules \
+            --exclude=.git \
+            --exclude='data/*.db' \
+            --exclude='data/*.db-*' \
+            -czf release.tgz .
+
+      - name: Build production env file
+        if: steps.deploy_ready.outputs.enabled == 'true'
+        env:
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+        run: |
+          cat > production.env <<EOF
+          PORT=3000
+          HOST_PORT=${APP_PORT}
+          ADMIN_KEY=${ADMIN_KEY}
+          TRUST_PROXY=1
+          COOKIE_SECURE=1
+          APP_DATA_DIR=${APP_DATA_DIR}
+          EOF
+
+      - name: Upload release to server
+        if: steps.deploy_ready.outputs.enabled == 'true'
+        run: |
+          scp release.tgz "${SSH_USER}@${SSH_HOST}:/tmp/koinori.tgz"
+          scp production.env "${SSH_USER}@${SSH_HOST}:/tmp/koinori.env"
+
+      - name: Run remote deployment
+        if: steps.deploy_ready.outputs.enabled == 'true'
+        run: |
+          ssh "${SSH_USER}@${SSH_HOST}" "export APP_DIR='${APP_DIR}' RELEASE_ARCHIVE='/tmp/koinori.tgz' ENV_FILE='/tmp/koinori.env' && bash -s" < deploy/remote-deploy.sh
+
+      - name: Smoke check
+        if: steps.deploy_ready.outputs.enabled == 'true'
+        run: |
+          ssh "${SSH_USER}@${SSH_HOST}" "curl -fsS http://127.0.0.1:${APP_PORT}/health"
+
+      - name: Tear down WireGuard
+        if: always() && steps.deploy_ready.outputs.enabled == 'true'
+        run: |
+          sudo wg-quick down ./wg-koinori.conf || true
