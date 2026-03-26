@@ -12,12 +12,7 @@ else
   DOCKER_CMD=(docker)
 fi
 
-mkdir -p "${PROJECT_DIR}/shared/data"
-
-if [[ -e "${PROJECT_DIR}/shared/data" && ! -w "${PROJECT_DIR}/shared/data" ]]; then
-  rm -rf "${PROJECT_DIR}/shared"
-  mkdir -p "${PROJECT_DIR}/shared/data"
-fi
+mkdir -p "${PROJECT_DIR}/data"
 
 if ! command -v rsync >/dev/null 2>&1; then
   echo "rsync is required on the deployment server."
