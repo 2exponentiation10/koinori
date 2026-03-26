@@ -86,20 +86,20 @@ HTTPS 뒤에 둘 경우:
 
 `main` 또는 `master` 브랜치에 push 되면 `.github/workflows/deploy.yml`이 실행되어 서버로 배포되도록 구성했습니다.
 
-필요한 GitHub Actions Secrets:
+배포 방식은 다른 프로젝트들과 동일하게 repo 전용 self-hosted runner를 서버에 붙여서 사용합니다.
 
-- `WG_CONFIG`: GitHub runner가 접속할 WireGuard 클라이언트 전체 설정
-- `SERVER_SSH_KEY`: 서버 접속용 개인키
-- `ADMIN_KEY`: 관리자 로그인 키
+필요한 GitHub Actions Secrets/Variables:
+
+- Secret `ADMIN_KEY`: 관리자 로그인 키
+- Variable `KOINORI_APP_PORT`: 앱 포트. 기본값 `7085`
 
 배포 흐름:
 
 1. GitHub Actions가 `npm ci`와 `npm run verify`를 실행합니다.
-2. WireGuard 터널을 열고 `10.10.0.1:22` 내부 SSH 접근을 확보합니다.
-3. 저장소를 tarball로 묶어 서버에 업로드합니다.
-4. 서버에서 `deploy/remote-deploy.sh`를 실행해 새 버전으로 교체합니다.
-5. 서버에서 `scripts/deploy_koinori.sh`가 `docker compose up -d --build`를 실행합니다.
-6. 마지막으로 `/health`를 확인합니다.
+2. self-hosted runner가 서버 작업 디렉터리에서 코드를 검증합니다.
+3. `scripts/deploy_koinori.sh`가 `/opt/protfolio/koinori`로 소스를 동기화합니다.
+4. `docker compose up -d --build`로 컨테이너를 재배포합니다.
+5. 마지막으로 `http://127.0.0.1:7085/health`를 확인합니다.
 
 서버에 한 번만 준비할 것:
 
@@ -112,7 +112,6 @@ docker compose version
 
 현재 워크플로 기본값:
 
-- 배포 대상 SSH: `lsy@10.10.0.1`
 - 앱 경로: `/opt/protfolio/koinori`
 - 앱 포트: `7085`
 - 공개 도메인: `koinori.protfolio.store`
