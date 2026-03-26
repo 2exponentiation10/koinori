@@ -9,6 +9,7 @@ const { buildPublicAppState } = require("./src/publicAppState");
 const {
   buildDashboard,
   cancelReservation,
+  cancelReservationByLookup,
   createReservation,
   updateRoomSlotSettings,
 } = require("./src/reservationService");
@@ -254,6 +255,15 @@ function handlePublicReservation(req, res, options = {}) {
           slotId: result.slot.id,
           message,
           level,
+          recentAction: {
+            type: result.status,
+            reservationNumber: result.reservationNumber,
+            communityName: req.body.communityName,
+            roomName: result.room.name,
+            slotLabel: result.slot.label,
+            timeRange: result.slot.timeRange,
+            contactLastFour: result.contactLastFour,
+          },
         }),
       });
       return;
@@ -299,6 +309,81 @@ function handlePublicReservation(req, res, options = {}) {
       screen: "form",
       roomId: req.body.roomId,
       slotId: req.body.slotId,
+    });
+  }
+}
+
+function handlePublicCancellation(req, res, options = {}) {
+  const wantsJson = Boolean(options.json);
+
+  try {
+    const result = cancelReservationByLookup(req.body);
+    const promotedMessage = result.promoted
+      ? ` 대기 1순위 ${result.promoted.communityName}팀이 자동으로 확정되었습니다.`
+      : "";
+    const message = `${result.cancelled.communityName} 예약 취소 완료.${promotedMessage}`;
+
+    if (wantsJson) {
+      res.json({
+        ok: true,
+        message,
+        state: buildPublicAppState({
+          dateInput: result.cancelled.reservationDate,
+          initialScreen: "status",
+          roomId: result.cancelled.roomId,
+          slotId: result.cancelled.slotId,
+          message,
+          level: "success",
+          recentAction: {
+            type: "cancelled",
+            reservationNumber: result.cancelled.reservationNumber,
+            communityName: result.cancelled.communityName,
+            roomName: result.cancelled.roomName,
+            slotLabel: result.cancelled.slot.label,
+            timeRange: result.cancelled.slot.timeRange,
+          },
+        }),
+      });
+      return;
+    }
+
+    redirectWithFlash(
+      res,
+      "/status",
+      {
+        date: result.cancelled.reservationDate,
+        roomId: result.cancelled.roomId,
+      },
+      message,
+      "success",
+    );
+  } catch (error) {
+    const message = error.message || "예약 취소 중 오류가 발생했습니다.";
+
+    if (wantsJson) {
+      res.status(400).json({
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message,
+        state: buildPublicAppState({
+          dateInput: req.body.reservationDate,
+          initialScreen: "intro",
+          message,
+          level: "error",
+          cancelLookup: {
+            reservationNumber: req.body.reservationNumber,
+            contactLastFour: req.body.contactLastFour,
+          },
+        }),
+      });
+      return;
+    }
+
+    renderPublicApp(req, res, {
+      statusCode: 400,
+      message,
+      level: "error",
+      screen: "intro",
     });
   }
 }
@@ -376,6 +461,10 @@ app.post("/reservations", (req, res) => {
 
 app.post("/api/reservations", (req, res) => {
   handlePublicReservation(req, res, { json: true });
+});
+
+app.post("/api/reservations/cancel", (req, res) => {
+  handlePublicCancellation(req, res, { json: true });
 });
 
 app.get("/admin", requireAdmin, (req, res) => {

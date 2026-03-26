@@ -73,19 +73,6 @@ function getRoomMetrics(room) {
   };
 }
 
-function getRoomAvailabilitySummary(rooms) {
-  const openRooms = rooms.filter((room) => getRoomMetrics(room).openCount > 0).length;
-  const waitRooms = rooms.filter((room) => {
-    const metrics = getRoomMetrics(room);
-    return metrics.openCount === 0 && metrics.waitCount > 0;
-  }).length;
-
-  return {
-    openRooms,
-    waitRooms,
-  };
-}
-
 function findRoom(rooms, roomId) {
   return rooms.find((room) => Number(room.id) === Number(roomId)) || null;
 }
@@ -258,7 +245,37 @@ function getSlotActionCopy(slot) {
   return "예약 불가";
 }
 
-function applyServerState(nextState, setAppState, setScreen, setSelectedRoomId, setSelectedSlotId, setFormValues, setFlash, setWaitlistPrompt) {
+function getRecentActionTitle(recentAction) {
+  if (!recentAction) {
+    return "";
+  }
+
+  if (recentAction.type === "confirmed") {
+    return "예약이 완료되었습니다";
+  }
+
+  if (recentAction.type === "waitlisted") {
+    return "대기 등록이 완료되었습니다";
+  }
+
+  if (recentAction.type === "cancelled") {
+    return "예약이 취소되었습니다";
+  }
+
+  return "";
+}
+
+function applyServerState(
+  nextState,
+  setAppState,
+  setScreen,
+  setSelectedRoomId,
+  setSelectedSlotId,
+  setFormValues,
+  setCancelValues,
+  setFlash,
+  setWaitlistPrompt,
+) {
   startTransition(() => {
     setAppState(nextState);
     setScreen(nextState.initialScreen || "intro");
@@ -268,6 +285,7 @@ function applyServerState(nextState, setAppState, setScreen, setSelectedRoomId, 
       ...nextState.formValues,
       attendees: String(nextState.formValues.attendees ?? ""),
     });
+    setCancelValues(nextState.cancelLookup || { reservationNumber: "", contactLastFour: "" });
     setFlash(
       nextState.flashMessage
         ? { message: nextState.flashMessage, level: nextState.flashLevel || "info" }
@@ -286,6 +304,9 @@ function App({ initialState }) {
     ...initialState.formValues,
     attendees: String(initialState.formValues.attendees ?? ""),
   });
+  const [cancelValues, setCancelValues] = useState(
+    initialState.cancelLookup || { reservationNumber: "", contactLastFour: "" },
+  );
   const [flash, setFlash] = useState(
     initialState.flashMessage
       ? { message: initialState.flashMessage, level: initialState.flashLevel || "info" }
@@ -293,9 +314,11 @@ function App({ initialState }) {
   );
   const [waitlistPrompt, setWaitlistPrompt] = useState(initialState.waitlistPrompt || null);
   const [waitlistModalOpen, setWaitlistModalOpen] = useState(Boolean(initialState.waitlistPrompt));
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [adminModalOpen, setAdminModalOpen] = useState(false);
   const [attendeesTouched, setAttendeesTouched] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cancelSubmitting, setCancelSubmitting] = useState(false);
   const [nowMs, setNowMs] = useState(Date.parse(initialState.serverNowIso) || Date.now());
   const tapCountRef = useRef(0);
   const tapResetRef = useRef(null);
@@ -330,10 +353,10 @@ function App({ initialState }) {
       : appState.bookingStatus;
   const introNotices = getVisibleNotices(appState.noticeItems, "intro", selectedSlot?.slotId);
   const formNotices = getVisibleNotices(appState.noticeItems, "form", selectedSlot?.slotId);
-  const roomAvailabilitySummary = getRoomAvailabilitySummary(rooms);
   const slotGroups = groupSlotsByState(selectedRoom);
   const currentBookingStep = getBookingStep(screen);
   const publicDockState = getPublicDockState(screen);
+  const recentAction = appState.recentAction;
 
   useEffect(() => {
     const baseServerNowMs = Date.parse(appState.serverNowIso) || Date.now();
@@ -403,6 +426,14 @@ function App({ initialState }) {
     setFlash(null);
   }
 
+  function openCancelModal() {
+    setCancelValues((current) => ({
+      reservationNumber: recentAction?.reservationNumber || current.reservationNumber || "",
+      contactLastFour: recentAction?.contactLastFour || current.contactLastFour || "",
+    }));
+    setCancelModalOpen(true);
+  }
+
   function goToScreen(nextScreen) {
     if (nextScreen === "room" && !bookingIsOpen) {
       setScreen("intro");
@@ -434,6 +465,15 @@ function App({ initialState }) {
     }
 
     setFormValues((current) => ({
+      ...current,
+      [field]: nextValue,
+    }));
+  }
+
+  function changeCancelValue(field, value) {
+    const nextValue = value.replace(/[^\d]/g, "").slice(0, field === "reservationNumber" ? 8 : 4);
+
+    setCancelValues((current) => ({
       ...current,
       [field]: nextValue,
     }));
@@ -535,6 +575,7 @@ function App({ initialState }) {
             setSelectedRoomId,
             setSelectedSlotId,
             setFormValues,
+            setCancelValues,
             setFlash,
             setWaitlistPrompt,
           );
@@ -556,6 +597,7 @@ function App({ initialState }) {
         setSelectedRoomId,
         setSelectedSlotId,
         setFormValues,
+        setCancelValues,
         setFlash,
         setWaitlistPrompt,
       );
@@ -574,6 +616,75 @@ function App({ initialState }) {
     }
 
     void submitReservation(false);
+  }
+
+  async function submitCancellation() {
+    if (!cancelValues.reservationNumber.trim()) {
+      setFlash({ message: "예약 번호를 입력해 주세요.", level: "error" });
+      setCancelModalOpen(true);
+      return;
+    }
+
+    if (cancelValues.contactLastFour.trim().length !== 4) {
+      setFlash({ message: "연락처 뒤 4자리를 입력해 주세요.", level: "error" });
+      setCancelModalOpen(true);
+      return;
+    }
+
+    setCancelSubmitting(true);
+    setFlash(null);
+
+    try {
+      const response = await fetch("/api/reservations/cancel", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(cancelValues),
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        if (data.state) {
+          applyServerState(
+            data.state,
+            setAppState,
+            setScreen,
+            setSelectedRoomId,
+            setSelectedSlotId,
+            setFormValues,
+            setCancelValues,
+            setFlash,
+            setWaitlistPrompt,
+          );
+        } else if (data.message) {
+          setFlash({ message: data.message, level: "error" });
+        }
+
+        setCancelModalOpen(true);
+        return;
+      }
+
+      applyServerState(
+        data.state,
+        setAppState,
+        setScreen,
+        setSelectedRoomId,
+        setSelectedSlotId,
+        setFormValues,
+        setCancelValues,
+        setFlash,
+        setWaitlistPrompt,
+      );
+      setCancelModalOpen(false);
+      setCancelValues({ reservationNumber: "", contactLastFour: "" });
+    } catch (_error) {
+      setFlash({ message: "예약 취소 중 오류가 발생했습니다.", level: "error" });
+      setCancelModalOpen(true);
+    } finally {
+      setCancelSubmitting(false);
+    }
   }
 
   function renderRoomCard(room) {
@@ -655,6 +766,25 @@ function App({ initialState }) {
     );
   }
 
+  function renderRecentActionCard() {
+    if (!recentAction) {
+      return null;
+    }
+
+    return (
+      <article className={`activity-card activity-card-${recentAction.type}`}>
+        <strong>{getRecentActionTitle(recentAction)}</strong>
+        <span>
+          {recentAction.roomName} {recentAction.slotLabel} {recentAction.timeRange}
+        </span>
+        <div className="activity-meta">
+          <span>예약번호 {recentAction.reservationNumber}</span>
+          {recentAction.contactLastFour ? <span>취소 확인 {recentAction.contactLastFour}</span> : null}
+        </div>
+      </article>
+    );
+  }
+
   function renderStatusSlot(slot) {
     return (
       <article key={slot.slotId} className={`board-slot-card board-slot-card-${slot.status}`}>
@@ -706,10 +836,6 @@ function App({ initialState }) {
       <header className="top-bar">
         <button type="button" className="brand-button" onClick={handleBrandTap}>
           <span className="brand-wordmark">KOINORI</span>
-          <span className="brand-copy">
-            <strong>{screen === "status" ? "예약 현황" : "주일 룸 예약"}</strong>
-            <small>{appState.selectedDateLabel} 자동 선택</small>
-          </span>
         </button>
       </header>
 
@@ -722,7 +848,6 @@ function App({ initialState }) {
       {screen === "intro" ? (
         <section className="page-card intro-page is-active">
           <article className="hero-card intro-hero-card">
-            <p className="eyebrow">SUNDAY ROOM BOOKING</p>
             <h1>주일 룸 예약</h1>
             <p className="hero-text">큰 버튼만 순서대로 누르면 예약할 수 있습니다.</p>
 
@@ -746,20 +871,6 @@ function App({ initialState }) {
 
             <div className={`status-banner status-${liveStatus.kind}`}>{liveStatus.message}</div>
 
-            <article className="overview-banner">
-              <strong>지금 바로 예약 가능한 시간 {appState.summary.remainingAssignments}개</strong>
-              <span>
-                예약 완료 {appState.summary.totalConfirmed}팀
-                {appState.summary.totalWaitlisted > 0
-                  ? ` · 대기 ${appState.summary.totalWaitlisted}팀`
-                  : " · 현재 대기 없음"}
-              </span>
-            </article>
-
-            <div className="notice-stack" aria-label="필수 안내">
-              {introNotices.map(renderNoticeCard)}
-            </div>
-
             <div className="page-actions intro-actions">
               <button
                 type="button"
@@ -773,9 +884,23 @@ function App({ initialState }) {
                     ? "예약 시작"
                     : "목요일 10:00부터 예약 시작"}
               </button>
-              <button type="button" className="secondary-button" onClick={() => goToScreen("status")}>
-                예약 현황 보기
+              <button type="button" className="secondary-button" onClick={openCancelModal}>
+                예약 취소
               </button>
+            </div>
+
+            <article className="overview-banner">
+              <strong>지금 바로 예약 가능한 시간 {appState.summary.remainingAssignments}개</strong>
+              <span>
+                예약 완료 {appState.summary.totalConfirmed}팀
+                {appState.summary.totalWaitlisted > 0
+                  ? ` · 대기 ${appState.summary.totalWaitlisted}팀`
+                  : " · 현재 대기 없음"}
+              </span>
+            </article>
+
+            <div className="notice-stack" aria-label="필수 안내">
+              {introNotices.map(renderNoticeCard)}
             </div>
           </article>
         </section>
@@ -795,20 +920,10 @@ function App({ initialState }) {
         <section className="page-card is-active">
           <div className="section-heading compact-heading">
             <div>
-              <p className="eyebrow">STEP 1</p>
-              <h2>방을 먼저 고르세요</h2>
+              <h2>방을 고르세요</h2>
             </div>
-            <p className="section-guide">카드를 한 번 누르면 바로 시간 선택으로 넘어갑니다.</p>
+            <p className="section-guide">바로 예약할 방을 한 번 누르세요.</p>
           </div>
-
-          <article className="overview-banner compact-overview">
-            <strong>바로 예약 가능한 방 {roomAvailabilitySummary.openRooms}곳</strong>
-            <span>
-              {roomAvailabilitySummary.waitRooms > 0
-                ? `대기만 가능한 방 ${roomAvailabilitySummary.waitRooms}곳`
-                : "대기 없이 바로 신청할 수 있습니다."}
-            </span>
-          </article>
 
           <div className="room-selector-grid">{rooms.map(renderRoomCard)}</div>
 
@@ -824,10 +939,9 @@ function App({ initialState }) {
         <section className="page-card is-active">
           <div className="section-heading compact-heading">
             <div>
-              <p className="eyebrow">STEP 2</p>
-              <h2>이제 시간을 고르세요</h2>
+              <h2>시간을 고르세요</h2>
             </div>
-            <p className="section-guide">먼저 비어 있는 시간을 보고, 없으면 대기 가능한 시간을 고르세요.</p>
+            <p className="section-guide">먼저 바로 예약 가능한 시간을 보세요.</p>
           </div>
 
           <div className="selection-banner">
@@ -863,16 +977,6 @@ function App({ initialState }) {
             )}
           </section>
 
-          {slotGroups.blocked.length ? (
-            <section className="slot-section">
-              <div className="slot-section-head">
-                <strong>예약 불가</strong>
-                <span>{slotGroups.blocked.length}개</span>
-              </div>
-              <div className="choice-grid">{slotGroups.blocked.map(renderSlotCard)}</div>
-            </section>
-          ) : null}
-
           <div className="page-actions compact-actions">
             <button type="button" className="secondary-button" onClick={() => goToScreen("room")}>
               방 다시 선택
@@ -885,10 +989,9 @@ function App({ initialState }) {
         <section className="page-card is-active">
           <div className="section-heading compact-heading">
             <div>
-              <p className="eyebrow">STEP 3</p>
               <h2>신청서 작성</h2>
             </div>
-            <p className="section-guide">선택한 방과 시간을 확인한 뒤 필수 항목만 입력하세요.</p>
+            <p className="section-guide">선택 내용을 확인하고 필수 항목만 입력하세요.</p>
           </div>
 
           <div className="selection-summary compact-summary-card">
@@ -1004,20 +1107,18 @@ function App({ initialState }) {
         <section className="page-card is-active compact-card">
           <div className="section-heading compact-heading">
             <div>
-              <p className="eyebrow">STATUS</p>
               <h2>현재 예약 현황</h2>
             </div>
-            <p className="section-guide">방을 누르면 시간별 예약 상태와 대기 순서를 볼 수 있습니다.</p>
+            <p className="section-guide">방을 누르면 시간별 예약 상태를 볼 수 있습니다.</p>
           </div>
 
-          <article className="overview-banner compact-overview">
-            <strong>예약 완료 {appState.summary.totalConfirmed}팀</strong>
-            <span>
-              {appState.summary.totalWaitlisted > 0
-                ? `대기 ${appState.summary.totalWaitlisted}팀 · 바로 예약 가능 시간 ${appState.summary.remainingAssignments}개`
-                : `현재 대기 없음 · 바로 예약 가능 시간 ${appState.summary.remainingAssignments}개`}
-            </span>
-          </article>
+          {renderRecentActionCard()}
+
+          <div className="page-actions compact-actions compact-actions-top">
+            <button type="button" className="danger-button" onClick={openCancelModal}>
+              예약 취소
+            </button>
+          </div>
 
           <div className="room-tab-grid">{rooms.map(statusRoomButton)}</div>
 
@@ -1030,12 +1131,6 @@ function App({ initialState }) {
               <div className="choice-grid">{selectedRoom.slots.map(renderStatusSlot)}</div>
             </section>
           ) : null}
-
-          <div className="page-actions compact-actions">
-            <button type="button" className="secondary-button" onClick={() => goToScreen("intro")}>
-              예약 화면으로 돌아가기
-            </button>
-          </div>
         </section>
       ) : null}
 
@@ -1123,6 +1218,54 @@ function App({ initialState }) {
                 대기 신청하기
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {cancelModalOpen ? (
+        <div className="modal-shell" onClick={(event) => event.target === event.currentTarget && setCancelModalOpen(false)}>
+          <div className="modal-card">
+            <button type="button" className="modal-close" onClick={() => setCancelModalOpen(false)}>
+              닫기
+            </button>
+            <div className="modal-brand">
+              <span className="brand-wordmark modal-wordmark">KOINORI</span>
+            </div>
+            <h2>예약 취소</h2>
+            <p className="modal-text">예약번호와 연락처 뒤 4자리를 입력해 주세요.</p>
+            <form
+              className="login-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitCancellation();
+              }}
+            >
+              <label className="field">
+                <span>예약번호</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={cancelValues.reservationNumber}
+                  onChange={(event) => changeCancelValue("reservationNumber", event.target.value)}
+                  placeholder="예: 0123"
+                  required
+                />
+              </label>
+              <label className="field">
+                <span>연락처 뒤 4자리</span>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  value={cancelValues.contactLastFour}
+                  onChange={(event) => changeCancelValue("contactLastFour", event.target.value)}
+                  placeholder="예: 0191"
+                  required
+                />
+              </label>
+              <button type="submit" className="primary-button" disabled={cancelSubmitting}>
+                {cancelSubmitting ? "처리 중입니다" : "예약 취소하기"}
+              </button>
+            </form>
           </div>
         </div>
       ) : null}

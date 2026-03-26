@@ -24,6 +24,13 @@ function normalizeFormValues(values = {}, fallbackDate, fallbackSlotId) {
   };
 }
 
+function normalizeCancelLookup(values = {}) {
+  return {
+    reservationNumber: values.reservationNumber || "",
+    contactLastFour: values.contactLastFour || "",
+  };
+}
+
 function serializeWaitlistItems(waitlistItems) {
   return waitlistItems.map((reservation) => ({
     id: reservation.id,
@@ -126,7 +133,9 @@ function buildPublicAppState(options = {}) {
       roomId: selectedRoomId,
       slotId: selectedSlotId,
     },
+    cancelLookup: normalizeCancelLookup(options.cancelLookup),
     waitlistPrompt: options.waitlistPrompt || null,
+    recentAction: options.recentAction || null,
     flashMessage: options.message || "",
     flashLevel: options.level || "info",
     adminReturnTo: `/admin?date=${encodeURIComponent(dashboard.selectedDate)}`,

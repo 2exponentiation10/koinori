@@ -66,7 +66,8 @@ button {
 }
 
 .top-bar {
-  padding: 4px 4px 2px;
+  padding: 8px 4px 4px;
+  margin-bottom: 4px;
 }
 
 .app-header,
@@ -152,7 +153,7 @@ button {
 
 .hero-card {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 
 .intro-hero-card {
@@ -367,6 +368,54 @@ button {
   color: var(--muted);
   font-size: 0.84rem;
   line-height: 1.5;
+}
+
+.activity-card {
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(33, 73, 63, 0.16);
+  background: rgba(240, 248, 244, 0.92);
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.activity-card strong {
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.activity-card > span {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.activity-card-waitlisted {
+  border-color: rgba(140, 106, 32, 0.18);
+  background: rgba(245, 235, 203, 0.9);
+}
+
+.activity-card-cancelled {
+  border-color: rgba(130, 47, 47, 0.16);
+  background: rgba(246, 217, 215, 0.88);
+}
+
+.activity-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.activity-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
 .page-tabs,
@@ -587,7 +636,7 @@ button {
 .slot-section {
   display: grid;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .slot-section-head {
@@ -857,7 +906,7 @@ button {
   background: rgba(33, 73, 63, 0.08);
   display: grid;
   gap: 4px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
 }
 
 .compact-banner {
@@ -948,6 +997,15 @@ button {
 .preset-row {
   display: grid;
   gap: 8px;
+}
+
+.page-actions {
+  margin-top: 14px;
+}
+
+.compact-actions-top {
+  margin-top: 0;
+  margin-bottom: 14px;
 }
 
 .public-dock {

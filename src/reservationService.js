@@ -6,6 +6,20 @@ const { APP_TIME_ZONE, MIN_ATTENDEES, ROOMS, ROOM_MODES, TIME_SLOTS } = require(
 const slotById = new Map(TIME_SLOTS.map((slot) => [slot.id, slot]));
 const roomById = new Map(ROOMS.map((room) => [room.id, room]));
 
+function toDigits(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function formatReservationNumber(reservationId) {
+  return String(reservationId).padStart(4, "0");
+}
+
+function getContactLastFour(contact) {
+  const digits = toDigits(contact);
+
+  return digits.length >= 4 ? digits.slice(-4) : "";
+}
+
 function getNow() {
   return DateTime.now().setZone(APP_TIME_ZONE).setLocale("ko");
 }
@@ -196,6 +210,7 @@ function decorateReservation(reservation) {
 
   return {
     id: reservation.id,
+    reservationNumber: formatReservationNumber(reservation.id),
     reservationDate: reservation.reservation_date,
     slotId: reservation.slot_id,
     slot: toSlotView(slot),
@@ -206,6 +221,7 @@ function decorateReservation(reservation) {
     requesterName: reservation.requester_name,
     attendees: reservation.attendees,
     contact: reservation.contact,
+    contactLastFour: getContactLastFour(reservation.contact),
     note: reservation.note,
     status: reservation.status,
     createdAtLabel: createdAt.isValid ? createdAt.toFormat("M월 d일 HH:mm") : "",
@@ -738,11 +754,13 @@ const createReservationTx = db.transaction((input) => {
 
   return {
     id: result.lastInsertRowid,
+    reservationNumber: formatReservationNumber(result.lastInsertRowid),
     reservationDate,
     slot: sanitized.slot,
     room: selectedRoom,
     status,
     waitlistPosition,
+    contactLastFour: getContactLastFour(sanitized.contact),
   };
 });
 
@@ -797,6 +815,53 @@ function cancelReservation(reservationId) {
   }
 
   return cancelReservationTx(reservationId);
+}
+
+function sanitizeCancellationLookupInput(input) {
+  const reservationId = Number.parseInt(toDigits(input.reservationNumber || input.id), 10);
+  const contactLastFour = toDigits(input.contactLastFour || "").slice(-4);
+
+  if (!Number.isInteger(reservationId) || reservationId <= 0) {
+    throw new Error("예약 번호를 확인해 주세요.");
+  }
+
+  if (contactLastFour.length !== 4) {
+    throw new Error("연락처 뒤 4자리를 입력해 주세요.");
+  }
+
+  return {
+    reservationId,
+    contactLastFour,
+  };
+}
+
+const cancelReservationByLookupTx = db.transaction((input) => {
+  const sanitized = sanitizeCancellationLookupInput(input);
+  const activeReservation = db
+    .prepare(
+      `
+        SELECT *
+        FROM reservations
+        WHERE id = ?
+          AND status IN ('confirmed', 'waitlisted')
+        LIMIT 1
+      `,
+    )
+    .get(sanitized.reservationId);
+
+  if (!activeReservation) {
+    throw new Error("예약 번호를 다시 확인해 주세요.");
+  }
+
+  if (getContactLastFour(activeReservation.contact) !== sanitized.contactLastFour) {
+    throw new Error("연락처 뒤 4자리가 맞지 않습니다.");
+  }
+
+  return cancelReservationTx(sanitized.reservationId);
+});
+
+function cancelReservationByLookup(input) {
+  return cancelReservationByLookupTx(input);
 }
 
 function sanitizeRoomSettingsInput(input) {
@@ -984,6 +1049,7 @@ function buildDashboard(dateInput) {
 module.exports = {
   buildDashboard,
   cancelReservation,
+  cancelReservationByLookup,
   createReservation,
   formatSlot,
   updateRoomSlotSettings,

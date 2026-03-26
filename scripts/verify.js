@@ -2,6 +2,7 @@ const db = require("../src/db");
 const {
   buildDashboard,
   cancelReservation,
+  cancelReservationByLookup,
   createReservation,
   updateRoomSlotSettings,
 } = require("../src/reservationService");
@@ -103,6 +104,7 @@ try {
 
   expect(confirmedWaitlist.status === "waitlisted", "Expected waitlist registration after confirmation.");
   expect(confirmedWaitlist.waitlistPosition === 1, "Expected confirmed waitlist position to be 1.");
+  expect(confirmedWaitlist.reservationNumber, "Expected waitlisted reservation to expose a reservation number.");
 
   dashboard = buildDashboard(TEST_DATE);
   slotTwo = dashboard.slotDetails.find((slot) => slot.id === 2);
@@ -115,6 +117,30 @@ try {
   expect(
     dashboard.schedule.waitlistedReservations.length === 1,
     "Expected dashboard to expose the waitlisted reservation list.",
+  );
+
+  const directLookupReservation = createReservation({
+    reservationDate: TEST_DATE,
+    slotId: 3,
+    roomId: 4,
+    communityName: "취소테스트",
+    requesterName: "취소신청",
+    attendees: 7,
+    contact: "010-4444-1234",
+    note: "",
+  });
+
+  expect(directLookupReservation.status === "confirmed", "Expected direct lookup reservation to confirm.");
+
+  const lookupCancellation = cancelReservationByLookup({
+    reservationNumber: directLookupReservation.reservationNumber,
+    contactLastFour: "1234",
+  });
+
+  expect(Boolean(lookupCancellation), "Expected lookup cancellation to succeed.");
+  expect(
+    lookupCancellation.cancelled.communityName === "취소테스트",
+    "Expected lookup cancellation to target the matching reservation.",
   );
 
   const reservationIdToCancel = db
