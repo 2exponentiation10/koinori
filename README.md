@@ -104,7 +104,7 @@ HTTPS 뒤에 둘 경우:
 서버에 한 번만 준비할 것:
 
 ```bash
-sudo mkdir -p /opt/protfolio/koinori/shared/data
+sudo mkdir -p /opt/protfolio/koinori/data
 sudo chown -R $USER:$USER /opt/protfolio/koinori
 docker --version
 docker compose version
@@ -116,6 +116,7 @@ docker compose version
 - 앱 포트: `7085`
 - 공개 도메인: `koinori.protfolio.store`
 - Docker Compose 파일: `docker-compose.yml`
+- 런타임 데이터 경로: `/opt/protfolio/koinori/data`
 
 ## 화면 구성
 

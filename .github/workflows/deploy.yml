@@ -46,7 +46,7 @@ jobs:
         shell: bash
         run: |
           PROJECT_DIR="${DEPLOY_ROOT}/${PROJECT_NAME}"
-          mkdir -p "${PROJECT_DIR}" "${PROJECT_DIR}/shared/data"
+          mkdir -p "${PROJECT_DIR}" "${PROJECT_DIR}/data"
 
           APP_PORT="${KOINORI_APP_PORT:-7085}"
           ADMIN_KEY="${KOINORI_ADMIN_KEY:-}"
@@ -62,7 +62,7 @@ jobs:
           ADMIN_KEY=${ADMIN_KEY}
           TRUST_PROXY=1
           COOKIE_SECURE=1
-          APP_DATA_DIR=${PROJECT_DIR}/shared/data
+          APP_DATA_DIR=${PROJECT_DIR}/data
           EOF
 
           echo "Prepared ${PROJECT_DIR}/.env"
