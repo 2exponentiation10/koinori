@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#21493f" />
+    <title>KOINORI 예약 현황</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="mobile-app public-app">
+    <main class="page-shell">
+      <header class="app-header compact-card">
+        <div class="brand-panel">
+          <span class="brand-wordmark">KOINORI</span>
+          <div class="brand-copy">
+            <strong>예약 현황</strong>
+            <small><%= selectedDateLabel %> 기준</small>
+          </div>
+        </div>
+
+        <div class="hero-meta compact-meta">
+          <div>
+            <span>확정 예약</span>
+            <strong><%= summary.totalConfirmed %></strong>
+          </div>
+          <div>
+            <span>대기 팀</span>
+            <strong><%= summary.totalWaitlisted %></strong>
+          </div>
+          <div>
+            <span>남은 방</span>
+            <strong><%= summary.remainingAssignments %></strong>
+          </div>
+        </div>
+
+        <div class="status-banner status-<%= bookingStatus.kind %>"><%= bookingStatus.message %></div>
+
+        <div class="page-actions compact-actions">
+          <a class="secondary-button link-button" href="/?date=<%= selectedDate %>">예약 화면으로 돌아가기</a>
+        </div>
+      </header>
+
+      <% if (flashMessage) { %>
+        <div class="flash flash-<%= flashLevel %>"><%= flashMessage %></div>
+      <% } %>
+
+      <section class="page-card compact-card">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">STATUS</p>
+            <h2>방별 예약 현황</h2>
+          </div>
+          <p class="section-guide">방을 고르면 그 방의 시간별 사용 상태와 대기 순서를 볼 수 있습니다.</p>
+        </div>
+
+        <div class="room-tab-grid">
+          <% schedule.rooms.forEach((room) => { %>
+            <% const availableCount = room.slots.filter((slot) => slot.actionType === 'reserve').length; %>
+            <a
+              href="/status?date=<%= selectedDate %>&roomId=<%= room.id %>"
+              class="room-chip-button <%= selectedStatusRoom && selectedStatusRoom.id === room.id ? 'is-active' : '' %>"
+            >
+              <strong><%= room.name %></strong>
+              <span>예약 가능 <%= availableCount %>타임</span>
+            </a>
+          <% }) %>
+        </div>
+
+        <% if (selectedStatusRoom) { %>
+          <section class="board-room-panel is-active">
+            <div class="selection-banner compact-banner">
+              <strong><%= selectedStatusRoom.name %></strong>
+              <span>각 시간의 예약 상태와 대기 명단입니다.</span>
+            </div>
+
+            <div class="choice-grid">
+              <% selectedStatusRoom.slots.forEach((slot) => { %>
+                <article class="board-slot-card board-slot-card-<%= slot.status %>">
+                  <span class="room-card-head">
+                    <strong><%= slot.slot.label %></strong>
+                    <small><%= slot.slot.timeRange %></small>
+                  </span>
+                  <span class="slot-card-badge">
+                    <%= slot.status === 'available' ? '예약 가능' : slot.status === 'reserved' ? '예약 중' : slot.status === 'fixed' ? '고정 사용' : '운영 안 함' %>
+                  </span>
+                  <span class="room-card-title"><%= slot.title %></span>
+                  <span class="room-card-detail"><%= slot.detail %></span>
+
+                  <% if (slot.waitlistItems.length) { %>
+                    <ol class="inline-waitlist">
+                      <% slot.waitlistItems.forEach((reservation, index) => { %>
+                        <li><%= index + 1 %>. <%= reservation.communityName %> / <%= reservation.requesterName %></li>
+                      <% }) %>
+                    </ol>
+                  <% } %>
+                </article>
+              <% }) %>
+            </div>
+          </section>
+        <% } %>
+      </section>
+    </main>
+  </body>
+</html>

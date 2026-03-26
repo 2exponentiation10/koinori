@@ -73,7 +73,7 @@ try {
     communityName: "대기공동체",
     requesterName: "대기신청",
     attendees: 8,
-    contact: "",
+    contact: "010-2222-2222",
     note: "",
   });
 
@@ -96,7 +96,7 @@ try {
     communityName: "대기공동체",
     requesterName: "대기신청",
     attendees: 8,
-    contact: "",
+    contact: "010-2222-2222",
     note: "",
     waitlistConsent: "1",
   });

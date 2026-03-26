@@ -107,6 +107,25 @@ function normalizePositiveInteger(value, fallback = null) {
   return parsed;
 }
 
+function buildPublicRoomState(schedule) {
+  return schedule.rooms.map((room) => ({
+    id: room.id,
+    name: room.name,
+    slots: room.slots.map((slot) => ({
+      slotId: slot.slot.id,
+      label: slot.slot.label,
+      timeRange: slot.slot.timeRange,
+      status: slot.status,
+      interactive: slot.interactive,
+      actionType: slot.actionType,
+      actionLabel: slot.actionLabel,
+      title: slot.title,
+      detail: slot.detail,
+      waitlistCount: slot.waitlistCount,
+    })),
+  }));
+}
+
 function hasAdminSession(req) {
   if (!adminAuthEnabled) {
     return true;
@@ -185,7 +204,7 @@ function renderPublicPage(req, res, options = {}) {
   const flash = readFlash(req);
   const initialPage = normalizePage(
     options.page || req.query.page,
-    ["intro", "room", "slot", "form", "board"],
+    ["intro", "room", "slot", "form"],
     "intro",
   );
   const formValues = normalizeFormValues(
@@ -193,22 +212,7 @@ function renderPublicPage(req, res, options = {}) {
     dashboard.selectedDate,
     dashboard.defaultSlotId,
   );
-  const publicRoomState = dashboard.schedule.rooms.map((room) => ({
-    id: room.id,
-    name: room.name,
-    slots: room.slots.map((slot) => ({
-      slotId: slot.slot.id,
-      label: slot.slot.label,
-      timeRange: slot.slot.timeRange,
-      status: slot.status,
-      interactive: slot.interactive,
-      actionType: slot.actionType,
-      actionLabel: slot.actionLabel,
-      title: slot.title,
-      detail: slot.detail,
-      waitlistCount: slot.waitlistCount,
-    })),
-  }));
+  const publicRoomState = buildPublicRoomState(dashboard.schedule);
   const fallbackRoom =
     publicRoomState.find((room) => room.slots.some((slot) => slot.interactive)) || publicRoomState[0];
   const initialRoomId = normalizePositiveInteger(
@@ -245,6 +249,21 @@ function renderPublicPage(req, res, options = {}) {
       formValues,
       waitlistPrompt,
     }),
+  });
+}
+
+function renderStatusPage(req, res, options = {}) {
+  const dashboard = buildDashboard(options.date || req.query.date);
+  const flash = readFlash(req);
+  const roomId = normalizePositiveInteger(options.roomId || req.query.roomId, null);
+  const selectedRoom =
+    dashboard.schedule.rooms.find((room) => room.id === roomId) || dashboard.schedule.rooms[0] || null;
+
+  res.status(options.statusCode || 200).render("status", {
+    ...dashboard,
+    flashMessage: options.message || flash.message,
+    flashLevel: options.level || flash.level,
+    selectedStatusRoom: selectedRoom,
   });
 }
 
@@ -304,6 +323,17 @@ app.get("/", (req, res) => {
   renderPublicPage(req, res);
 });
 
+app.get("/status", (req, res) => {
+  renderStatusPage(req, res);
+});
+
+app.get("/board", (req, res) => {
+  const params = new URLSearchParams(req.query);
+  const query = params.toString();
+
+  res.redirect(query ? `/status?${query}` : "/status");
+});
+
 app.post("/reservations", (req, res) => {
   try {
     const result = createReservation(req.body);
@@ -335,12 +365,10 @@ app.post("/reservations", (req, res) => {
 
     redirectWithFlash(
       res,
-      "/",
+      "/status",
       {
         date: result.reservationDate,
-        page: "board",
         roomId: result.room.id,
-        slotId: result.slot.id,
       },
       message,
       result.status === "confirmed" ? "success" : "info",

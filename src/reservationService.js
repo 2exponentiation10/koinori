@@ -609,6 +609,10 @@ function sanitizeReservationInput(input, now = getNow()) {
     throw new Error(`최소 ${MIN_ATTENDEES}명 이상만 예약할 수 있습니다.`);
   }
 
+  if (!contact) {
+    throw new Error("연락처를 입력해 주세요.");
+  }
+
   assertBookableDate(reservationDate, now);
 
   return {

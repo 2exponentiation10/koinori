@@ -42,6 +42,7 @@ function initPublicPage(publicState) {
   const roomIdInput = document.getElementById("room-id-input");
   const waitlistConsentInput = document.getElementById("waitlist-consent-input");
   const dateInput = document.getElementById("reservation-date-input");
+  const bookingForm = document.getElementById("booking-form");
   const submitButton = document.getElementById("booking-submit-button");
   const introConfirmButton = document.getElementById("intro-confirm-button");
   const liveCurrentTime = document.getElementById("live-current-time");
@@ -50,20 +51,24 @@ function initPublicPage(publicState) {
   const summarySlotLabel = document.getElementById("summary-slot-label");
   const summaryModeLabel = document.getElementById("summary-mode-label");
   const guidanceBox = document.getElementById("form-guidance-box");
-  const waitlistConfirmation = document.getElementById("waitlist-confirmation");
-  const waitlistConfirmMessage = document.getElementById("waitlist-confirm-message");
+  const attendeesInput = document.getElementById("attendees-input");
+  const attendeesError = document.getElementById("attendees-error");
+  const contactInput = document.getElementById("contact-input");
   const selectedRoomBanner = document.getElementById("selected-room-banner");
   const roomPickButtons = Array.from(document.querySelectorAll("[data-select-room]"));
   const roomPanels = Array.from(document.querySelectorAll("[data-room-slots]"));
   const slotButtons = Array.from(document.querySelectorAll("[data-select-slot]"));
-  const boardRoomTabs = Array.from(document.querySelectorAll("[data-board-room-tab]"));
-  const boardPanels = Array.from(document.querySelectorAll("[data-board-room]"));
   const pageButtons = Array.from(document.querySelectorAll("[data-go-page]"));
   const modal = document.getElementById("admin-access-modal");
   const modalClose = document.getElementById("admin-modal-close");
   const adminTrigger = document.getElementById("admin-secret-trigger");
+  const waitlistModal = document.getElementById("waitlist-modal");
+  const waitlistModalClose = document.getElementById("waitlist-modal-close");
+  const waitlistModalMessage = document.getElementById("waitlist-modal-message");
+  const waitlistConfirmButton = document.getElementById("waitlist-confirm-button");
+  const waitlistDeclineButton = document.getElementById("waitlist-decline-button");
 
-  if (!slotIdInput || !roomIdInput || !submitButton) {
+  if (!slotIdInput || !roomIdInput || !submitButton || !bookingForm) {
     return;
   }
 
@@ -75,6 +80,7 @@ function initPublicPage(publicState) {
     waitlistPrompt: publicState.waitlistPrompt || null,
     tapCount: 0,
     tapResetTimer: null,
+    waitlistModalOpenedFromPrompt: false,
   };
   const serverNowMs = Date.parse(publicState.serverNowIso || "");
   const bookingOpenAtMs = Date.parse(publicState.bookingOpenAtIso || "");
@@ -193,6 +199,76 @@ function initPublicPage(publicState) {
     );
   }
 
+  function getMinAttendees() {
+    const rawMin = Number.parseInt(attendeesInput ? attendeesInput.min : "", 10);
+
+    return Number.isInteger(rawMin) ? rawMin : 4;
+  }
+
+  function isAttendeesValid() {
+    if (!attendeesInput || attendeesInput.value === "") {
+      return false;
+    }
+
+    const numericValue = Number.parseInt(attendeesInput.value, 10);
+
+    return Number.isInteger(numericValue) && numericValue >= getMinAttendees();
+  }
+
+  function updateAttendeesValidation() {
+    if (!attendeesInput) {
+      return true;
+    }
+
+    const isValid = isAttendeesValid();
+    const shouldShowError = attendeesInput.value !== "" && !isValid;
+
+    attendeesInput.setCustomValidity(
+      shouldShowError ? `최소 ${getMinAttendees()}명부터 신청할 수 있습니다.` : "",
+    );
+
+    if (attendeesError) {
+      attendeesError.hidden = !shouldShowError;
+    }
+
+    return isValid;
+  }
+
+  function closeWaitlistModal() {
+    if (waitlistModal) {
+      waitlistModal.hidden = true;
+    }
+  }
+
+  function openWaitlistModal(message) {
+    if (!waitlistModal || !waitlistModalMessage) {
+      return;
+    }
+
+    waitlistModalMessage.textContent = message;
+    waitlistModal.hidden = false;
+  }
+
+  function buildWaitlistMessage() {
+    const room = getSelectedRoom();
+    const slot = getSelectedSlot();
+
+    if (!room || !slot) {
+      return "이 시간은 먼저 접수된 팀이 있어 대기 여부를 먼저 확인합니다.";
+    }
+
+    if (matchesPrompt(room.id, slot.slotId)) {
+      return (
+        state.waitlistPrompt.message ||
+        `${room.name} ${slot.label} 대기 등록 여부를 확인해 주세요.`
+      );
+    }
+
+    const nextPosition = Number(slot.waitlistCount || 0) + 1;
+
+    return `${room.name} ${slot.label} ${slot.timeRange}은 이미 사용 중입니다. 지금 신청하면 대기 ${nextPosition}번으로 등록됩니다.`;
+  }
+
   function clearPromptIfSelectionChanged(roomId, slotId) {
     if (!state.waitlistPrompt) {
       return;
@@ -200,6 +276,9 @@ function initPublicPage(publicState) {
 
     if (!matchesPrompt(roomId, slotId)) {
       state.waitlistPrompt = null;
+      state.waitlistModalOpenedFromPrompt = false;
+      waitlistConsentInput.value = "0";
+      closeWaitlistModal();
     }
   }
 
@@ -316,23 +395,11 @@ function initPublicPage(publicState) {
     });
   }
 
-  function updateBoardPanels() {
-    boardRoomTabs.forEach((button) => {
-      button.classList.toggle(
-        "is-active",
-        Number(button.dataset.boardRoomTab) === Number(state.selectedRoomId),
-      );
-    });
-
-    boardPanels.forEach((panel) => {
-      panel.classList.toggle("is-active", Number(panel.dataset.boardRoom) === Number(state.selectedRoomId));
-    });
-  }
-
   function updateFormSummary() {
     const room = getSelectedRoom();
     const slot = getSelectedSlot();
     const hasPrompt = matchesPrompt(state.selectedRoomId, state.selectedSlotId);
+    const attendeesValid = updateAttendeesValidation();
 
     summaryRoomLabel.textContent = room ? room.name : "선택 전";
     summarySlotLabel.textContent = slot ? `${slot.label} ${slot.timeRange}` : "선택 전";
@@ -341,34 +408,26 @@ function initPublicPage(publicState) {
       summaryModeLabel.textContent = "선택 전";
       submitButton.disabled = true;
       waitlistConsentInput.value = "0";
-      waitlistConfirmation.hidden = true;
       guidanceBox.textContent = "먼저 방과 시간을 선택해 주세요.";
       return;
     }
 
     if (hasPrompt) {
-      summaryModeLabel.textContent = `대기 ${state.waitlistPrompt.waitlistPosition}번 확인`;
-      submitButton.textContent = "이대로 대기 명단 올리기";
-      submitButton.disabled = !publicState.bookingStatus.open;
-      waitlistConsentInput.value = "1";
-      waitlistConfirmation.hidden = false;
-      waitlistConfirmMessage.textContent =
-        state.waitlistPrompt.message ||
-        "먼저 신청한 팀이 예약을 완료했습니다. 원하시면 대기 명단에 등록할 수 있습니다.";
-      guidanceBox.textContent =
-        "원하지 않으면 시간을 다시 고르시고, 그대로 진행하면 같은 방과 시간의 대기 명단에 등록됩니다.";
+      summaryModeLabel.textContent = `대기 ${state.waitlistPrompt.waitlistPosition}번 가능`;
+      submitButton.textContent = "대기 여부 확인하기";
+      submitButton.disabled = !publicState.bookingStatus.open || !attendeesValid;
+      waitlistConsentInput.value = "0";
+      guidanceBox.textContent = "같은 방과 시간에 먼저 예약된 팀이 있어 대기 등록 여부를 한 번 더 확인합니다.";
       return;
     }
 
-    waitlistConfirmation.hidden = true;
     waitlistConsentInput.value = "0";
-    submitButton.disabled = !publicState.bookingStatus.open;
+    submitButton.disabled = !publicState.bookingStatus.open || !attendeesValid;
 
     if (slot.actionType === "waitlist") {
-      summaryModeLabel.textContent = "선착순 재확인 후 대기 안내";
-      submitButton.textContent = "예약 가능 여부 확인하기";
-      guidanceBox.textContent =
-        "지금은 이미 사용 중인 시간입니다. 제출하면 서버가 선착순을 다시 확인하고 대기 등록 여부를 물어봅니다.";
+      summaryModeLabel.textContent = "대기 가능";
+      submitButton.textContent = "대기 여부 확인하기";
+      guidanceBox.textContent = "이 시간은 이미 사용 중입니다. 신청하면 대기 명단 등록 여부를 먼저 묻습니다.";
       return;
     }
 
@@ -392,9 +451,17 @@ function initPublicPage(publicState) {
     updateRoomCards();
     updateRoomPanels();
     updateSlotCards();
-    updateBoardPanels();
     updateFormSummary();
     syncInputs();
+
+    if (
+      state.currentPage === "form" &&
+      matchesPrompt(state.selectedRoomId, state.selectedSlotId) &&
+      !state.waitlistModalOpenedFromPrompt
+    ) {
+      state.waitlistModalOpenedFromPrompt = true;
+      openWaitlistModal(buildWaitlistMessage());
+    }
   }
 
   function goToPage(pageName) {
@@ -428,13 +495,56 @@ function initPublicPage(publicState) {
     });
   });
 
-  boardRoomTabs.forEach((button) => {
-    button.addEventListener("click", () => {
-      const preferredSlot = state.selectedSlotId || publicState.defaultSlotId;
-
-      setRoom(button.dataset.boardRoomTab, preferredSlot);
+  if (attendeesInput) {
+    attendeesInput.addEventListener("input", () => {
+      updateAttendeesValidation();
       render();
     });
+  }
+
+  if (contactInput) {
+    contactInput.addEventListener("input", () => {
+      if (contactInput.value.trim()) {
+        contactInput.setCustomValidity("");
+      }
+    });
+  }
+
+  bookingForm.addEventListener("submit", (event) => {
+    const slot = getSelectedSlot();
+
+    updateAttendeesValidation();
+
+    if (attendeesInput && !isAttendeesValid()) {
+      event.preventDefault();
+      attendeesInput.reportValidity();
+      return;
+    }
+
+    if (contactInput && !contactInput.value.trim()) {
+      contactInput.setCustomValidity("연락처를 입력해 주세요.");
+      event.preventDefault();
+      contactInput.reportValidity();
+      return;
+    }
+
+    if (contactInput) {
+      contactInput.setCustomValidity("");
+    }
+
+    if (!slot || !slot.interactive) {
+      event.preventDefault();
+      return;
+    }
+
+    if (waitlistConsentInput.value === "1") {
+      return;
+    }
+
+    if (slot.actionType === "waitlist" || matchesPrompt(state.selectedRoomId, state.selectedSlotId)) {
+      event.preventDefault();
+      openWaitlistModal(buildWaitlistMessage());
+    }
   });
 
   if (adminTrigger && modal) {
@@ -472,6 +582,32 @@ function initPublicPage(publicState) {
       if (event.target === modal) {
         modal.hidden = true;
       }
+    });
+  }
+
+  if (waitlistModalClose && waitlistModal) {
+    waitlistModalClose.addEventListener("click", closeWaitlistModal);
+
+    waitlistModal.addEventListener("click", (event) => {
+      if (event.target === waitlistModal) {
+        closeWaitlistModal();
+      }
+    });
+  }
+
+  if (waitlistDeclineButton) {
+    waitlistDeclineButton.addEventListener("click", () => {
+      waitlistConsentInput.value = "0";
+      closeWaitlistModal();
+      goToPage("slot");
+    });
+  }
+
+  if (waitlistConfirmButton) {
+    waitlistConfirmButton.addEventListener("click", () => {
+      waitlistConsentInput.value = "1";
+      closeWaitlistModal();
+      bookingForm.requestSubmit();
     });
   }
 
