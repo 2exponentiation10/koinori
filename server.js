@@ -48,6 +48,7 @@ app.use(
         baseUri: ["'self'"],
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
+        upgradeInsecureRequests: process.env.NODE_ENV === "production" ? [] : null,
       },
     },
   }),
@@ -187,7 +188,7 @@ function buildWaitlistPrompt(result) {
   return {
     roomId: result.room.id,
     slotId: result.slot.id,
-    message: `지금 신청하면 ${result.room.name} ${result.slot.label} 대기 ${result.waitlistPosition}번으로 등록됩니다.`,
+    message: `${result.room.name} ${result.slot.label}은 먼저 신청한 팀이 있어 대기 ${result.waitlistPosition}번으로 등록됩니다.`,
     waitlistPosition: result.waitlistPosition,
   };
 }
@@ -200,7 +201,7 @@ function handlePublicReservation(req, res, options = {}) {
 
     if (result.status === "waitlist_confirm_required") {
       const waitlistPrompt = buildWaitlistPrompt(result);
-      const message = `${result.slot.label} ${result.room.name}은 먼저 신청한 팀이 예약을 완료했습니다.`;
+      const message = `${result.room.name} ${result.slot.label}은 먼저 접수한 팀이 있습니다.`;
 
       if (wantsJson) {
         res.status(409).json({
@@ -237,8 +238,8 @@ function handlePublicReservation(req, res, options = {}) {
 
     const message =
       result.status === "confirmed"
-        ? `${result.slot.label} ${result.room.name} 예약이 완료되었습니다.`
-        : `${result.slot.label} ${result.room.name} 대기 ${result.waitlistPosition}번으로 등록되었습니다.`;
+        ? `${result.room.name} ${result.slot.label} 예약 완료`
+        : `${result.room.name} ${result.slot.label} 대기 ${result.waitlistPosition}번 등록 완료`;
     const level = result.status === "confirmed" ? "success" : "info";
 
     if (wantsJson) {

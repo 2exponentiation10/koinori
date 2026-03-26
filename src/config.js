@@ -7,11 +7,31 @@ const ROOM_MODES = {
 };
 
 const NOTICE_ITEMS = [
-  "주일 룸 예약 최소 인원은 4명입니다. 4명 이상 모임만 신청해 주세요.",
-  "주일 주문 브레이크 타임은 14:30-16:30입니다.",
-  "4타임 이용자는 14:30 전에 주문을 완료해 주세요.",
-  "타카페 음료 및 외부 음식은 반입할 수 없습니다.",
-  "예약은 매주 목요일 오전 10시부터 선착순으로 오픈됩니다.",
+  {
+    id: "min-attendees",
+    title: "최소 4명",
+    detail: "4명 이상 모임만 신청할 수 있습니다.",
+    screens: ["intro"],
+  },
+  {
+    id: "booking-open",
+    title: "목요일 오전 10시 오픈",
+    detail: "오픈 전에는 예약 버튼이 잠겨 있습니다.",
+    screens: ["intro"],
+  },
+  {
+    id: "slot-four-order",
+    title: "4타임 주문 안내",
+    detail: "4타임은 14:30 전에 주문을 완료해 주세요.",
+    screens: ["form"],
+    slotIds: [4],
+  },
+  {
+    id: "outside-food",
+    title: "외부 음식 반입 불가",
+    detail: "타카페 음료와 외부 음식은 반입할 수 없습니다.",
+    screens: ["intro", "form"],
+  },
 ];
 
 const ROOMS = [

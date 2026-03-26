@@ -40,18 +40,24 @@ function getRoomMetrics(room) {
   let state = "closed";
   let badge = "예약 불가";
   let action = "선택 불가";
+  let helperText = "오늘은 예약을 받지 않습니다.";
 
   if (openCount > 0) {
     state = "open";
     badge = `예약 가능 ${openCount}타임`;
-    action = "이 방 선택";
+    action = "선택";
+    helperText = "바로 예약 가능한 시간이 있습니다.";
   } else if (waitCount > 0) {
     state = "wait";
     badge = "대기 가능";
     action = "대기 확인";
+    helperText = "바로 예약은 마감됐고 대기만 가능합니다.";
   } else if (fixedCount === room.slots.length) {
     state = "fixed";
     badge = "고정 사용";
+    helperText = "오늘은 고정 사용으로 운영됩니다.";
+  } else if (operationCount > 0) {
+    helperText = "지금 선택할 수 있는 시간이 없습니다.";
   }
 
   return {
@@ -63,6 +69,20 @@ function getRoomMetrics(room) {
     state,
     badge,
     action,
+    helperText,
+  };
+}
+
+function getRoomAvailabilitySummary(rooms) {
+  const openRooms = rooms.filter((room) => getRoomMetrics(room).openCount > 0).length;
+  const waitRooms = rooms.filter((room) => {
+    const metrics = getRoomMetrics(room);
+    return metrics.openCount === 0 && metrics.waitCount > 0;
+  }).length;
+
+  return {
+    openRooms,
+    waitRooms,
   };
 }
 
@@ -112,7 +132,7 @@ function statusText(slot) {
   }
 
   if (slot.status === "reserved") {
-    return "예약 중";
+    return "예약 완료";
   }
 
   if (slot.status === "fixed") {
@@ -133,7 +153,109 @@ function buildWaitlistMessage(room, slot, waitlistPrompt) {
 
   const nextPosition = Number(slot.waitlistCount || 0) + 1;
 
-  return `${room.name} ${slot.label} ${slot.timeRange}은 이미 사용 중입니다. 지금 신청하면 대기 ${nextPosition}번으로 등록됩니다.`;
+  return `${room.name} ${slot.label}은 먼저 신청한 팀이 있습니다. 원하면 대기 ${nextPosition}번으로 등록할 수 있습니다.`;
+}
+
+function getVisibleNotices(noticeItems, screen, slotId) {
+  return (noticeItems || []).filter((notice) => {
+    if (Array.isArray(notice.screens) && !notice.screens.includes(screen)) {
+      return false;
+    }
+
+    if (Array.isArray(notice.slotIds) && !notice.slotIds.includes(Number(slotId))) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+function groupSlotsByState(room) {
+  if (!room) {
+    return {
+      reserve: [],
+      waitlist: [],
+      blocked: [],
+    };
+  }
+
+  return room.slots.reduce(
+    (groups, slot) => {
+      if (slot.actionType === "reserve") {
+        groups.reserve.push(slot);
+        return groups;
+      }
+
+      if (slot.actionType === "waitlist") {
+        groups.waitlist.push(slot);
+        return groups;
+      }
+
+      groups.blocked.push(slot);
+      return groups;
+    },
+    {
+      reserve: [],
+      waitlist: [],
+      blocked: [],
+    },
+  );
+}
+
+function getBookingStep(screen) {
+  if (screen === "room") {
+    return 1;
+  }
+
+  if (screen === "slot") {
+    return 2;
+  }
+
+  if (screen === "form") {
+    return 3;
+  }
+
+  return 0;
+}
+
+function getPublicDockState(screen) {
+  if (screen === "status") {
+    return "status";
+  }
+
+  if (screen === "intro") {
+    return "intro";
+  }
+
+  return "booking";
+}
+
+function getSlotActionTone(slot) {
+  if (slot.actionType === "reserve") {
+    return "open";
+  }
+
+  if (slot.actionType === "waitlist") {
+    return "wait";
+  }
+
+  return "closed";
+}
+
+function getSlotActionCopy(slot) {
+  if (slot.actionType === "reserve") {
+    return "바로 예약";
+  }
+
+  if (slot.actionType === "waitlist") {
+    return "대기 가능";
+  }
+
+  if (slot.status === "fixed") {
+    return "고정 사용";
+  }
+
+  return "예약 불가";
 }
 
 function applyServerState(nextState, setAppState, setScreen, setSelectedRoomId, setSelectedSlotId, setFormValues, setFlash, setWaitlistPrompt) {
@@ -204,8 +326,14 @@ function App({ initialState }) {
   const liveStatus = hasErrorState
     ? appState.bookingStatus
     : bookingIsOpen
-      ? { kind: "open", message: "예약이 열려 있습니다. 큰 버튼을 눌러 진행해 주세요." }
+      ? { kind: "open", message: "지금 예약할 수 있습니다. 아래 큰 버튼을 눌러 진행해 주세요." }
       : appState.bookingStatus;
+  const introNotices = getVisibleNotices(appState.noticeItems, "intro", selectedSlot?.slotId);
+  const formNotices = getVisibleNotices(appState.noticeItems, "form", selectedSlot?.slotId);
+  const roomAvailabilitySummary = getRoomAvailabilitySummary(rooms);
+  const slotGroups = groupSlotsByState(selectedRoom);
+  const currentBookingStep = getBookingStep(screen);
+  const publicDockState = getPublicDockState(screen);
 
   useEffect(() => {
     const baseServerNowMs = Date.parse(appState.serverNowIso) || Date.now();
@@ -275,6 +403,25 @@ function App({ initialState }) {
     setFlash(null);
   }
 
+  function goToScreen(nextScreen) {
+    if (nextScreen === "room" && !bookingIsOpen) {
+      setScreen("intro");
+      return;
+    }
+
+    if (nextScreen === "slot" && !selectedRoom) {
+      setScreen("room");
+      return;
+    }
+
+    if (nextScreen === "form" && (!selectedRoom || !selectedSlot)) {
+      setScreen("room");
+      return;
+    }
+
+    setScreen(nextScreen);
+  }
+
   function changeFormValue(field, value) {
     let nextValue = value;
 
@@ -315,7 +462,7 @@ function App({ initialState }) {
     setSelectedRoomId(room.id);
     setSelectedSlotId(nextSlotId);
     clearWaitlistPrompt(room.id, nextSlotId);
-    setScreen("slot");
+    goToScreen("slot");
   }
 
   function selectSlot(slotId) {
@@ -325,7 +472,7 @@ function App({ initialState }) {
 
     setSelectedSlotId(slotId);
     clearWaitlistPrompt(selectedRoom.id, slotId);
-    setScreen("form");
+    goToScreen("form");
   }
 
   async function submitReservation(waitlistConsent = false) {
@@ -431,20 +578,6 @@ function App({ initialState }) {
 
   function renderRoomCard(room) {
     const metrics = getRoomMetrics(room);
-    const roomDetailParts = [];
-
-    if (metrics.waitCount > 0) {
-      roomDetailParts.push(`대기 가능 ${metrics.waitCount}타임`);
-    }
-
-    if (metrics.fixedCount > 0) {
-      roomDetailParts.push(`고정 ${metrics.fixedCount}타임`);
-    }
-
-    if (metrics.closedCount > 0) {
-      roomDetailParts.push(`미운영 ${metrics.closedCount}타임`);
-    }
-
     const disabled = !room.slots.some((slot) => slot.interactive);
 
     return (
@@ -463,17 +596,15 @@ function App({ initialState }) {
         </span>
         <span className="room-pick-stats">
           <span className="room-pick-stat">
-            <span>예약 가능한 타임</span>
+            <span>바로 예약</span>
             <strong>{metrics.openCount}</strong>
           </span>
           <span className="room-pick-stat">
-            <span>운영 타임</span>
-            <strong>{metrics.operationCount}</strong>
+            <span>대기 가능</span>
+            <strong>{metrics.waitCount}</strong>
           </span>
         </span>
-        <span className="room-pick-detail">
-          {roomDetailParts.join(" · ") || "예약 가능한 시간을 확인해 주세요."}
-        </span>
+        <span className="room-pick-detail">{metrics.helperText}</span>
         <span className="room-pick-action">{metrics.action}</span>
       </button>
     );
@@ -494,10 +625,33 @@ function App({ initialState }) {
           <strong>{slot.label}</strong>
           <small>{slot.timeRange}</small>
         </span>
-        <span className="slot-card-badge">{slot.actionLabel}</span>
+        <span className={`slot-card-badge slot-card-badge-${getSlotActionTone(slot)}`}>
+          {getSlotActionCopy(slot)}
+        </span>
         <span className="slot-card-title">{slot.title}</span>
         <span className="slot-card-detail">{slot.detail}</span>
       </button>
+    );
+  }
+
+  function renderNoticeCard(notice) {
+    return (
+      <article key={notice.id} className="notice-card">
+        <strong>{notice.title}</strong>
+        <span>{notice.detail}</span>
+      </article>
+    );
+  }
+
+  function renderProgressStep(step, label) {
+    const stepState =
+      currentBookingStep === step ? "is-current" : currentBookingStep > step ? "is-complete" : "";
+
+    return (
+      <div key={step} className={`progress-step ${stepState}`}>
+        <span className="progress-step-number">{step}</span>
+        <strong>{label}</strong>
+      </div>
     );
   }
 
@@ -513,13 +667,16 @@ function App({ initialState }) {
         <span className="room-card-detail">{slot.detail}</span>
 
         {slot.waitlistItems.length > 0 ? (
-          <ol className="inline-waitlist">
-            {slot.waitlistItems.map((item, index) => (
-              <li key={item.id ?? `${item.communityName}-${index}`}>
-                {index + 1}. {item.communityName} / {item.requesterName}
-              </li>
-            ))}
-          </ol>
+          <div className="room-waitlist-block">
+            <strong className="waitlist-title">대기 순서</strong>
+            <ol className="inline-waitlist">
+              {slot.waitlistItems.map((item, index) => (
+                <li key={item.id ?? `${item.communityName}-${index}`}>
+                  {index + 1}. {item.communityName} / {item.requesterName}
+                </li>
+              ))}
+            </ol>
+          </div>
         ) : null}
       </article>
     );
@@ -539,7 +696,7 @@ function App({ initialState }) {
         }}
       >
         <strong>{room.name}</strong>
-        <span>예약 가능 {metrics.openCount}타임</span>
+        <span>{metrics.openCount > 0 ? `바로 예약 ${metrics.openCount}타임` : metrics.badge}</span>
       </button>
     );
   }
@@ -567,15 +724,15 @@ function App({ initialState }) {
           <article className="hero-card intro-hero-card">
             <p className="eyebrow">SUNDAY ROOM BOOKING</p>
             <h1>주일 룸 예약</h1>
-            <p className="hero-text">같은 화면에서 천천히 따라오면 됩니다. 방을 고르고, 시간을 고르고, 신청하면 끝입니다.</p>
+            <p className="hero-text">큰 버튼만 순서대로 누르면 예약할 수 있습니다.</p>
 
             <div className="hero-meta">
               <div>
-                <span>예약 대상</span>
+                <span>예약 날짜</span>
                 <strong>{appState.selectedDateLabel}</strong>
               </div>
               <div>
-                <span>예약 오픈</span>
+                <span>예약 시작</span>
                 <strong>{appState.bookingOpenAtLabel}</strong>
               </div>
               <div>
@@ -589,38 +746,18 @@ function App({ initialState }) {
 
             <div className={`status-banner status-${liveStatus.kind}`}>{liveStatus.message}</div>
 
-            <div className="guide-steps" aria-label="예약 순서 안내">
-              <article className="guide-step-card">
-                <strong>1. 방 선택</strong>
-                <span>사용할 방 하나를 먼저 고릅니다.</span>
-              </article>
-              <article className="guide-step-card">
-                <strong>2. 시간 선택</strong>
-                <span>원하는 타임을 누르면 바로 다음으로 넘어갑니다.</span>
-              </article>
-              <article className="guide-step-card">
-                <strong>3. 신청 완료</strong>
-                <span>이름, 인원, 연락처만 입력하면 됩니다.</span>
-              </article>
-            </div>
+            <article className="overview-banner">
+              <strong>지금 바로 예약 가능한 시간 {appState.summary.remainingAssignments}개</strong>
+              <span>
+                예약 완료 {appState.summary.totalConfirmed}팀
+                {appState.summary.totalWaitlisted > 0
+                  ? ` · 대기 ${appState.summary.totalWaitlisted}팀`
+                  : " · 현재 대기 없음"}
+              </span>
+            </article>
 
-            <div className="summary-strip intro-summary">
-              <article className="summary-card">
-                <span>예약 완료</span>
-                <strong>{appState.summary.totalConfirmed}</strong>
-              </article>
-              <article className="summary-card">
-                <span>대기 팀</span>
-                <strong>{appState.summary.totalWaitlisted}</strong>
-              </article>
-              <article className="summary-card">
-                <span>남은 방</span>
-                <strong>{appState.summary.remainingAssignments}</strong>
-              </article>
-              <article className="summary-card">
-                <span>가동률</span>
-                <strong>{appState.summary.occupancyPercent}%</strong>
-              </article>
+            <div className="notice-stack" aria-label="필수 안내">
+              {introNotices.map(renderNoticeCard)}
             </div>
 
             <div className="page-actions intro-actions">
@@ -628,15 +765,15 @@ function App({ initialState }) {
                 type="button"
                 className="primary-button"
                 disabled={!bookingIsOpen}
-                onClick={() => setScreen("room")}
+                onClick={() => goToScreen("room")}
               >
                 {hasErrorState
                   ? "예약 가능 날짜가 아닙니다"
                   : bookingIsOpen
-                    ? "방 선택하기"
+                    ? "예약 시작"
                     : "목요일 10:00부터 예약 시작"}
               </button>
-              <button type="button" className="secondary-button" onClick={() => setScreen("status")}>
+              <button type="button" className="secondary-button" onClick={() => goToScreen("status")}>
                 예약 현황 보기
               </button>
             </div>
@@ -645,29 +782,13 @@ function App({ initialState }) {
       ) : null}
 
       {screen !== "intro" && screen !== "status" ? (
-        <nav className="page-tabs workflow-tabs" aria-label="예약 단계">
-          <button
-            type="button"
-            className={`page-tab ${screen === "room" ? "is-active" : ""}`}
-            onClick={() => setScreen("room")}
-          >
-            1. 방
-          </button>
-          <button
-            type="button"
-            className={`page-tab ${screen === "slot" ? "is-active" : ""}`}
-            onClick={() => setScreen("slot")}
-          >
-            2. 시간
-          </button>
-          <button
-            type="button"
-            className={`page-tab ${screen === "form" ? "is-active" : ""}`}
-            onClick={() => setScreen("form")}
-          >
-            3. 신청
-          </button>
-        </nav>
+        <div className="progress-track" aria-label="예약 단계">
+          {[
+            [1, "방 선택"],
+            [2, "시간 선택"],
+            [3, "신청"],
+          ].map(([step, label]) => renderProgressStep(step, label))}
+        </div>
       ) : null}
 
       {screen === "room" ? (
@@ -677,32 +798,22 @@ function App({ initialState }) {
               <p className="eyebrow">STEP 1</p>
               <h2>방을 먼저 고르세요</h2>
             </div>
-            <p className="section-guide">카드를 한 번만 눌러 선택하면 다음 화면에서 그 방의 시간을 고를 수 있습니다.</p>
+            <p className="section-guide">카드를 한 번 누르면 바로 시간 선택으로 넘어갑니다.</p>
           </div>
 
-          <div className="summary-strip compact-summary">
-            <article className="summary-card">
-              <span>예약 가능한 타임</span>
-              <strong>{appState.summary.openSlotCount}</strong>
-            </article>
-            <article className="summary-card">
-              <span>운영 타임</span>
-              <strong>{appState.summary.reservableSlotCount}</strong>
-            </article>
-            <article className="summary-card">
-              <span>확정 예약</span>
-              <strong>{appState.summary.totalConfirmed}</strong>
-            </article>
-            <article className="summary-card">
-              <span>대기 팀</span>
-              <strong>{appState.summary.totalWaitlisted}</strong>
-            </article>
-          </div>
+          <article className="overview-banner compact-overview">
+            <strong>바로 예약 가능한 방 {roomAvailabilitySummary.openRooms}곳</strong>
+            <span>
+              {roomAvailabilitySummary.waitRooms > 0
+                ? `대기만 가능한 방 ${roomAvailabilitySummary.waitRooms}곳`
+                : "대기 없이 바로 신청할 수 있습니다."}
+            </span>
+          </article>
 
           <div className="room-selector-grid">{rooms.map(renderRoomCard)}</div>
 
           <div className="page-actions compact-actions">
-            <button type="button" className="secondary-button" onClick={() => setScreen("intro")}>
+            <button type="button" className="secondary-button" onClick={() => goToScreen("intro")}>
               처음으로
             </button>
           </div>
@@ -716,7 +827,7 @@ function App({ initialState }) {
               <p className="eyebrow">STEP 2</p>
               <h2>이제 시간을 고르세요</h2>
             </div>
-            <p className="section-guide">비어 있는 시간은 바로 예약되고, 이미 찬 시간은 대기 등록 여부를 한 번 더 묻습니다.</p>
+            <p className="section-guide">먼저 비어 있는 시간을 보고, 없으면 대기 가능한 시간을 고르세요.</p>
           </div>
 
           <div className="selection-banner">
@@ -728,10 +839,42 @@ function App({ initialState }) {
             </span>
           </div>
 
-          <div className="choice-grid">{selectedRoom ? selectedRoom.slots.map(renderSlotCard) : null}</div>
+          <section className="slot-section">
+            <div className="slot-section-head">
+              <strong>바로 예약 가능</strong>
+              <span>{slotGroups.reserve.length}개</span>
+            </div>
+            {slotGroups.reserve.length ? (
+              <div className="choice-grid">{slotGroups.reserve.map(renderSlotCard)}</div>
+            ) : (
+              <div className="empty-state">지금 바로 예약 가능한 시간은 없습니다.</div>
+            )}
+          </section>
+
+          <section className="slot-section">
+            <div className="slot-section-head">
+              <strong>대기 가능</strong>
+              <span>{slotGroups.waitlist.length}개</span>
+            </div>
+            {slotGroups.waitlist.length ? (
+              <div className="choice-grid">{slotGroups.waitlist.map(renderSlotCard)}</div>
+            ) : (
+              <div className="empty-state">현재 대기 가능한 시간은 없습니다.</div>
+            )}
+          </section>
+
+          {slotGroups.blocked.length ? (
+            <section className="slot-section">
+              <div className="slot-section-head">
+                <strong>예약 불가</strong>
+                <span>{slotGroups.blocked.length}개</span>
+              </div>
+              <div className="choice-grid">{slotGroups.blocked.map(renderSlotCard)}</div>
+            </section>
+          ) : null}
 
           <div className="page-actions compact-actions">
-            <button type="button" className="secondary-button" onClick={() => setScreen("room")}>
+            <button type="button" className="secondary-button" onClick={() => goToScreen("room")}>
               방 다시 선택
             </button>
           </div>
@@ -745,24 +888,20 @@ function App({ initialState }) {
               <p className="eyebrow">STEP 3</p>
               <h2>신청서 작성</h2>
             </div>
-            <p className="section-guide">필수 항목만 짧게 입력하면 됩니다.</p>
+            <p className="section-guide">선택한 방과 시간을 확인한 뒤 필수 항목만 입력하세요.</p>
           </div>
 
           <div className="selection-summary compact-summary-card">
             <div>
-              <span>예약 날짜</span>
-              <strong>{appState.selectedDateLabel}</strong>
-            </div>
-            <div>
-              <span>선택 방</span>
+              <span>방</span>
               <strong>{selectedRoom ? selectedRoom.name : "선택 전"}</strong>
             </div>
             <div>
-              <span>선택 시간</span>
+              <span>시간</span>
               <strong>{selectedSlot ? `${selectedSlot.label} ${selectedSlot.timeRange}` : "선택 전"}</strong>
             </div>
             <div>
-              <span>접수 방식</span>
+              <span>접수</span>
               <strong>
                 {waitlistPrompt
                   ? `대기 ${waitlistPrompt.waitlistPosition}번 가능`
@@ -773,13 +912,7 @@ function App({ initialState }) {
             </div>
           </div>
 
-          <div className="helper-box compact-helper">
-            {waitlistPrompt
-              ? "먼저 신청한 팀이 있어 대기 등록 여부를 팝업으로 한 번 더 확인합니다."
-              : selectedSlot?.actionType === "waitlist"
-                ? "이미 사용 중인 시간입니다. 신청하면 대기 여부를 팝업으로 묻습니다."
-                : "지금 비어 있는 시간이면 신청 즉시 예약이 완료됩니다."}
-          </div>
+          {formNotices.length ? <div className="notice-stack notice-stack-compact">{formNotices.map(renderNoticeCard)}</div> : null}
 
           <form
             className="booking-form compact-form"
@@ -842,7 +975,7 @@ function App({ initialState }) {
             </label>
 
             <label className="field field-wide">
-              <span>메모</span>
+              <span>메모 (선택)</span>
               <textarea
                 rows="3"
                 value={formValues.note}
@@ -852,7 +985,7 @@ function App({ initialState }) {
             </label>
 
             <div className="page-actions compact-actions">
-              <button type="button" className="secondary-button" onClick={() => setScreen("slot")}>
+              <button type="button" className="secondary-button" onClick={() => goToScreen("slot")}>
                 시간 다시 선택
               </button>
               <button type="submit" className="primary-button" disabled={!canSubmit}>
@@ -874,27 +1007,17 @@ function App({ initialState }) {
               <p className="eyebrow">STATUS</p>
               <h2>현재 예약 현황</h2>
             </div>
-            <p className="section-guide">방을 누르면 그 방의 시간별 상태와 대기 순서를 바로 볼 수 있습니다.</p>
+            <p className="section-guide">방을 누르면 시간별 예약 상태와 대기 순서를 볼 수 있습니다.</p>
           </div>
 
-          <div className="summary-strip compact-summary">
-            <article className="summary-card">
-              <span>확정 예약</span>
-              <strong>{appState.summary.totalConfirmed}</strong>
-            </article>
-            <article className="summary-card">
-              <span>대기 팀</span>
-              <strong>{appState.summary.totalWaitlisted}</strong>
-            </article>
-            <article className="summary-card">
-              <span>남은 방</span>
-              <strong>{appState.summary.remainingAssignments}</strong>
-            </article>
-            <article className="summary-card">
-              <span>가동률</span>
-              <strong>{appState.summary.occupancyPercent}%</strong>
-            </article>
-          </div>
+          <article className="overview-banner compact-overview">
+            <strong>예약 완료 {appState.summary.totalConfirmed}팀</strong>
+            <span>
+              {appState.summary.totalWaitlisted > 0
+                ? `대기 ${appState.summary.totalWaitlisted}팀 · 바로 예약 가능 시간 ${appState.summary.remainingAssignments}개`
+                : `현재 대기 없음 · 바로 예약 가능 시간 ${appState.summary.remainingAssignments}개`}
+            </span>
+          </article>
 
           <div className="room-tab-grid">{rooms.map(statusRoomButton)}</div>
 
@@ -902,19 +1025,44 @@ function App({ initialState }) {
             <section className="board-room-panel is-active">
               <div className="selection-banner compact-banner">
                 <strong>{selectedRoom.name}</strong>
-                <span>큰 카드로 시간별 상태를 바로 확인할 수 있습니다.</span>
+                <span>시간별 상태를 큰 카드로 확인할 수 있습니다.</span>
               </div>
               <div className="choice-grid">{selectedRoom.slots.map(renderStatusSlot)}</div>
             </section>
           ) : null}
 
           <div className="page-actions compact-actions">
-            <button type="button" className="secondary-button" onClick={() => setScreen("intro")}>
+            <button type="button" className="secondary-button" onClick={() => goToScreen("intro")}>
               예약 화면으로 돌아가기
             </button>
           </div>
         </section>
       ) : null}
+
+      <nav className="public-dock" aria-label="빠른 이동">
+        <button
+          type="button"
+          className={`public-dock-button ${publicDockState === "intro" ? "is-active" : ""}`}
+          onClick={() => goToScreen("intro")}
+        >
+          안내
+        </button>
+        <button
+          type="button"
+          className={`public-dock-button ${publicDockState === "booking" ? "is-active" : ""}`}
+          onClick={() => goToScreen("room")}
+          disabled={!bookingIsOpen}
+        >
+          예약
+        </button>
+        <button
+          type="button"
+          className={`public-dock-button ${publicDockState === "status" ? "is-active" : ""}`}
+          onClick={() => goToScreen("status")}
+        >
+          현황
+        </button>
+      </nav>
 
       {adminModalOpen ? (
         <div className="modal-shell" onClick={(event) => event.target === event.currentTarget && setAdminModalOpen(false)}>
@@ -960,7 +1108,7 @@ function App({ initialState }) {
                 className="secondary-button"
                 onClick={() => {
                   setWaitlistModalOpen(false);
-                  setScreen("slot");
+                  goToScreen("slot");
                 }}
               >
                 다른 시간 보기
