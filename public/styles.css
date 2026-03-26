@@ -65,6 +65,10 @@ button {
   padding: 14px 10px 28px;
 }
 
+.top-bar {
+  padding: 4px 4px 2px;
+}
+
 .app-header,
 .page-card,
 .flash,
@@ -145,6 +149,10 @@ button {
 .hero-card {
   display: grid;
   gap: 12px;
+}
+
+.intro-hero-card {
+  gap: 14px;
 }
 
 .hero-row {
@@ -254,6 +262,11 @@ button {
   gap: 8px;
 }
 
+.rule-list {
+  display: grid;
+  gap: 8px;
+}
+
 .mini-rule-card {
   padding: 10px 12px;
   border-radius: var(--radius-md);
@@ -295,6 +308,7 @@ button {
 
 .page-tab,
 .slot-chip-button,
+.room-chip-button,
 .preset-button {
   min-height: 50px;
   padding: 10px 12px;
@@ -308,7 +322,8 @@ button {
 }
 
 .page-tab.is-active,
-.slot-chip-button.is-active {
+.slot-chip-button.is-active,
+.room-chip-button.is-active {
   background: #111;
   border-color: #111;
   color: #fff;
@@ -322,6 +337,17 @@ button {
 
 .slot-chip-button span {
   font-size: 0.78rem;
+  opacity: 0.76;
+}
+
+.room-chip-button {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+}
+
+.room-chip-button span {
+  font-size: 0.74rem;
   opacity: 0.76;
 }
 
@@ -340,6 +366,8 @@ button {
 
 .choice-grid,
 .summary-strip,
+.room-selector-grid,
+.room-tab-grid,
 .settings-room-list,
 .management-list,
 .waitlist-grid {
@@ -374,9 +402,11 @@ button {
 }
 
 .choice-card,
+.room-pick-card,
 .slot-card,
 .room-card,
 .board-room-card,
+.board-slot-card,
 .settings-room-card,
 .management-card,
 .waitlist-card {
@@ -386,6 +416,7 @@ button {
 }
 
 .choice-card,
+.room-pick-card,
 .slot-card,
 .room-card {
   width: 100%;
@@ -398,6 +429,74 @@ button {
   gap: 6px;
 }
 
+.room-selector-grid,
+.room-tab-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.room-pick-card {
+  display: grid;
+  gap: 8px;
+}
+
+.room-pick-head {
+  display: grid;
+  gap: 4px;
+}
+
+.room-pick-head strong,
+.slot-card-title {
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.room-pick-head small,
+.room-pick-detail,
+.room-card-detail,
+.slot-card-detail,
+.selection-banner span {
+  color: var(--muted);
+}
+
+.room-pick-head small {
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.room-pick-detail {
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.room-pick-action {
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.room-pick-card.is-selected {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(33, 73, 63, 0.14);
+}
+
+.room-pick-card-open {
+  border-color: rgba(33, 73, 63, 0.18);
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.room-pick-card-wait {
+  border-color: rgba(179, 96, 66, 0.18);
+  background: rgba(255, 246, 240, 0.92);
+}
+
+.room-pick-card-fixed {
+  border-color: rgba(140, 106, 32, 0.18);
+  background: rgba(245, 235, 203, 0.9);
+}
+
+.room-pick-card-closed {
+  background: rgba(238, 230, 220, 0.88);
+}
+
 .choice-card-active {
   border-color: var(--primary);
   background: rgba(220, 233, 228, 0.92);
@@ -405,7 +504,8 @@ button {
 
 .slot-card,
 .room-card,
-.board-room-card {
+.board-room-card,
+.board-slot-card {
   display: grid;
   gap: 8px;
 }
@@ -451,9 +551,20 @@ button {
   border-color: rgba(33, 73, 63, 0.18);
 }
 
+.slot-card-available,
+.board-slot-card-available {
+  border-color: rgba(33, 73, 63, 0.18);
+}
+
 .slot-card-full {
   border-color: rgba(179, 96, 66, 0.18);
   background: rgba(255, 247, 242, 0.92);
+}
+
+.slot-card-reserved,
+.board-slot-card-reserved {
+  border-color: rgba(179, 96, 66, 0.18);
+  background: rgba(255, 246, 240, 0.92);
 }
 
 .slot-card-fixed {
@@ -461,7 +572,16 @@ button {
   background: rgba(245, 235, 203, 0.9);
 }
 
+.board-slot-card-fixed {
+  border-color: rgba(140, 106, 32, 0.18);
+  background: rgba(245, 235, 203, 0.9);
+}
+
 .slot-card-closed {
+  background: rgba(238, 230, 220, 0.88);
+}
+
+.board-slot-card-closed {
   background: rgba(238, 230, 220, 0.88);
 }
 
@@ -471,6 +591,7 @@ button {
   box-shadow: 0 0 0 2px rgba(33, 73, 63, 0.14);
 }
 
+.room-pick-card:disabled,
 .room-card:disabled,
 .slot-card:disabled {
   opacity: 0.72;
@@ -503,11 +624,13 @@ button {
 }
 
 .board-slot-panel,
+.board-room-panel,
 .settings-panel {
   display: none;
 }
 
 .board-slot-panel.is-active,
+.board-room-panel.is-active,
 .settings-panel.is-active {
   display: grid;
   gap: 12px;
@@ -572,6 +695,26 @@ button {
   padding: 12px 14px;
   border-radius: var(--radius-md);
   background: rgba(33, 73, 63, 0.07);
+}
+
+.confirm-prompt {
+  padding: 14px;
+  border: 1px solid rgba(179, 96, 66, 0.18);
+  border-radius: var(--radius-md);
+  background: rgba(255, 246, 240, 0.92);
+  display: grid;
+  gap: 6px;
+}
+
+.confirm-prompt strong {
+  font-size: 0.95rem;
+}
+
+.confirm-prompt p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.55;
 }
 
 .compact-helper {
@@ -665,7 +808,8 @@ button {
 .management-card,
 .waitlist-card,
 .settings-room-card,
-.board-room-card {
+.board-room-card,
+.board-slot-card {
   padding: 14px;
 }
 

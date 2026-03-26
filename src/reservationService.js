@@ -281,6 +281,33 @@ function getSlotAvailability(dateIso, slotId) {
   };
 }
 
+function getRoomWaitlistCount(reservationDate, slotId, roomId) {
+  return db
+    .prepare(
+      `
+        SELECT COUNT(*)
+        FROM reservations
+        WHERE reservation_date = ?
+          AND slot_id = ?
+          AND room_id = ?
+          AND status = 'waitlisted'
+      `,
+    )
+    .pluck()
+    .get(reservationDate, slotId, roomId);
+}
+
+function isConfirmedRoomConflict(error) {
+  if (!error || typeof error.message !== "string") {
+    return false;
+  }
+
+  return (
+    error.code === "SQLITE_CONSTRAINT_UNIQUE" &&
+    error.message.includes("reservations.reservation_date, reservations.slot_id, reservations.room_id")
+  );
+}
+
 function findNextWaitlistedReservation(reservationDate, slotId, roomId) {
   return db
     .prepare(
@@ -555,6 +582,11 @@ function sanitizeReservationInput(input, now = getNow()) {
   const requesterName = String(input.requesterName || "").trim();
   const contact = String(input.contact || "").trim();
   const note = String(input.note || "").trim();
+  const waitlistConsent =
+    input.waitlistConsent === true ||
+    input.waitlistConsent === "true" ||
+    input.waitlistConsent === "1" ||
+    input.waitlistConsent === 1;
   const slot = slotById.get(slotId);
 
   if (!slot) {
@@ -588,6 +620,7 @@ function sanitizeReservationInput(input, now = getNow()) {
     requesterName,
     contact,
     note,
+    waitlistConsent,
   };
 }
 
@@ -623,56 +656,80 @@ const createReservationTx = db.transaction((input) => {
 
   const isImmediatelyAvailable = !selectedRoomState.isOccupied;
   const selectedRoom = roomById.get(sanitized.roomId);
-  const status = isImmediatelyAvailable ? "confirmed" : "waitlisted";
   const timestamp = now.toISO();
-  const result = db
-    .prepare(
-      `
-        INSERT INTO reservations (
-          reservation_date,
-          slot_id,
-          room_id,
-          community_name,
-          requester_name,
-          attendees,
-          contact,
-          note,
-          status,
-          created_at,
-          updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-    )
-    .run(
+  let status = isImmediatelyAvailable ? "confirmed" : "waitlisted";
+
+  if (!isImmediatelyAvailable && !sanitized.waitlistConsent) {
+    return {
       reservationDate,
-      sanitized.slot.id,
-      sanitized.roomId,
-      sanitized.communityName,
-      sanitized.requesterName,
-      sanitized.attendees,
-      sanitized.contact,
-      sanitized.note,
-      status,
-      timestamp,
-      timestamp,
-    );
+      slot: sanitized.slot,
+      room: selectedRoom,
+      status: "waitlist_confirm_required",
+      waitlistPosition: getRoomWaitlistCount(reservationDate, sanitized.slot.id, sanitized.roomId) + 1,
+    };
+  }
+
+  const insertReservation = (nextStatus) =>
+    db
+      .prepare(
+        `
+          INSERT INTO reservations (
+            reservation_date,
+            slot_id,
+            room_id,
+            community_name,
+            requester_name,
+            attendees,
+            contact,
+            note,
+            status,
+            created_at,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        reservationDate,
+        sanitized.slot.id,
+        sanitized.roomId,
+        sanitized.communityName,
+        sanitized.requesterName,
+        sanitized.attendees,
+        sanitized.contact,
+        sanitized.note,
+        nextStatus,
+        timestamp,
+        timestamp,
+      );
+
+  let result;
+
+  try {
+    result = insertReservation(status);
+  } catch (error) {
+    if (!isConfirmedRoomConflict(error)) {
+      throw error;
+    }
+
+    if (!sanitized.waitlistConsent) {
+      return {
+        reservationDate,
+        slot: sanitized.slot,
+        room: selectedRoom,
+        status: "waitlist_confirm_required",
+        waitlistPosition:
+          getRoomWaitlistCount(reservationDate, sanitized.slot.id, sanitized.roomId) + 1,
+      };
+    }
+
+    status = "waitlisted";
+    result = insertReservation(status);
+  }
 
   const waitlistPosition =
     status === "waitlisted"
-      ? db
-          .prepare(
-            `
-              SELECT COUNT(*)
-              FROM reservations
-              WHERE reservation_date = ?
-                AND slot_id = ?
-                AND room_id = ?
-                AND status = 'waitlisted'
-            `,
-          )
-          .pluck()
-          .get(reservationDate, sanitized.slot.id, sanitized.roomId)
+      ? getRoomWaitlistCount(reservationDate, sanitized.slot.id, sanitized.roomId)
       : null;
 
   return {
@@ -894,15 +951,18 @@ function updateRoomSlotSettings(input) {
 function buildDashboard(dateInput) {
   const now = getNow();
   const selectedDate = normalizeDate(dateInput, now);
+  const bookingOpenAt = getBookingOpenAt(selectedDate);
   const schedule = buildSchedule(selectedDate.toISODate());
   const defaultSlot =
     schedule.slotDetails.find((slot) => slot.bookable) || schedule.slotDetails[0];
 
   return {
     currentTimeLabel: now.toFormat("M월 d일 (ccc) HH:mm"),
+    currentTimeIso: now.toISO(),
     selectedDate: selectedDate.toISODate(),
     selectedDateLabel: selectedDate.toFormat("M월 d일 (ccc)"),
-    bookingOpenAtLabel: getBookingOpenAt(selectedDate).toFormat("M월 d일 (ccc) HH:mm"),
+    bookingOpenAtLabel: bookingOpenAt.toFormat("M월 d일 (ccc) HH:mm"),
+    bookingOpenAtIso: bookingOpenAt.toISO(),
     bookingStatus: getBookingStatus(selectedDate, now),
     sundayOptions: getSundayOptions(8, now).map((option) => ({
       ...option,

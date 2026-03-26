@@ -78,8 +78,8 @@ try {
   });
 
   expect(
-    roomSpecificWaitlist.status === "waitlisted",
-    "Expected a waitlist registration for an already reserved room.",
+    roomSpecificWaitlist.status === "waitlist_confirm_required",
+    "Expected a waitlist confirmation prompt for an already reserved room.",
   );
   expect(roomSpecificWaitlist.waitlistPosition === 1, "Expected first room waitlist position to be 1.");
 
@@ -87,7 +87,31 @@ try {
   slotTwo = dashboard.slotDetails.find((slot) => slot.id === 2);
   const roomThree = slotTwo && slotTwo.rooms.find((room) => room.roomId === 3);
 
-  expect(roomThree && roomThree.waitlistCount === 1, "Expected room 3 waitlist count to be exposed.");
+  expect(roomThree && roomThree.waitlistCount === 0, "Expected prompt stage not to create a waitlist yet.");
+
+  const confirmedWaitlist = createReservation({
+    reservationDate: TEST_DATE,
+    slotId: 2,
+    roomId: 3,
+    communityName: "대기공동체",
+    requesterName: "대기신청",
+    attendees: 8,
+    contact: "",
+    note: "",
+    waitlistConsent: "1",
+  });
+
+  expect(confirmedWaitlist.status === "waitlisted", "Expected waitlist registration after confirmation.");
+  expect(confirmedWaitlist.waitlistPosition === 1, "Expected confirmed waitlist position to be 1.");
+
+  dashboard = buildDashboard(TEST_DATE);
+  slotTwo = dashboard.slotDetails.find((slot) => slot.id === 2);
+  const refreshedRoomThree = slotTwo && slotTwo.rooms.find((room) => room.roomId === 3);
+
+  expect(
+    refreshedRoomThree && refreshedRoomThree.waitlistCount === 1,
+    "Expected room 3 waitlist count to be exposed after confirmation.",
+  );
   expect(
     dashboard.schedule.waitlistedReservations.length === 1,
     "Expected dashboard to expose the waitlisted reservation list.",

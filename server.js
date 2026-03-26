@@ -97,6 +97,16 @@ function normalizePage(value, allowedPages, fallback) {
   return allowedPages.includes(value) ? value : fallback;
 }
 
+function normalizePositiveInteger(value, fallback = null) {
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return fallback;
+  }
+
+  return parsed;
+}
+
 function hasAdminSession(req) {
   if (!adminAuthEnabled) {
     return true;
@@ -173,49 +183,67 @@ function readFlash(req) {
 function renderPublicPage(req, res, options = {}) {
   const dashboard = buildDashboard(options.date || req.query.date);
   const flash = readFlash(req);
-  const initialPage = normalizePage(options.page || req.query.page, ["slot", "room", "form", "board"], "slot");
+  const initialPage = normalizePage(
+    options.page || req.query.page,
+    ["intro", "room", "slot", "form", "board"],
+    "intro",
+  );
   const formValues = normalizeFormValues(
     options.formValues,
     dashboard.selectedDate,
     dashboard.defaultSlotId,
   );
-  const publicSlotState = dashboard.slotDetails.map((slot) => ({
-    id: slot.id,
-    label: slot.label,
-    timeRange: slot.timeRange,
-    remainingRooms: slot.remainingRooms,
-    detailLabel: slot.detailLabel,
-    availabilityLabel: slot.availabilityLabel,
-    bookable: slot.bookable,
-    rooms: slot.rooms.map((room) => ({
-      roomId: room.roomId,
-      roomName: room.roomName,
-      status: room.status,
-      interactive: room.interactive,
-      actionType: room.actionType,
-      actionLabel: room.actionLabel,
-      title: room.title,
-      detail: room.detail,
-      waitlistCount: room.waitlistCount,
+  const publicRoomState = dashboard.schedule.rooms.map((room) => ({
+    id: room.id,
+    name: room.name,
+    slots: room.slots.map((slot) => ({
+      slotId: slot.slot.id,
+      label: slot.slot.label,
+      timeRange: slot.slot.timeRange,
+      status: slot.status,
+      interactive: slot.interactive,
+      actionType: slot.actionType,
+      actionLabel: slot.actionLabel,
+      title: slot.title,
+      detail: slot.detail,
+      waitlistCount: slot.waitlistCount,
     })),
   }));
+  const fallbackRoom =
+    publicRoomState.find((room) => room.slots.some((slot) => slot.interactive)) || publicRoomState[0];
+  const initialRoomId = normalizePositiveInteger(
+    options.roomId || req.query.roomId || formValues.roomId,
+    fallbackRoom ? fallbackRoom.id : 1,
+  );
+  const initialSlotId = normalizePositiveInteger(
+    options.slotId || req.query.slotId || formValues.slotId,
+    dashboard.defaultSlotId,
+  );
+  const waitlistPrompt = options.waitlistPrompt || null;
 
   res.status(options.statusCode || 200).render("index", {
     ...dashboard,
+    initialPage,
     noticeItems: NOTICE_ITEMS,
     minAttendees: MIN_ATTENDEES,
     flashMessage: options.message || flash.message,
     flashLevel: options.level || flash.level,
     formValues,
     adminReturnTo: `/admin?date=${encodeURIComponent(dashboard.selectedDate)}`,
+    initialPublicRoomId: initialRoomId,
+    initialPublicSlotId: initialSlotId,
     serializedPublicState: serializeForTemplate({
       selectedDate: dashboard.selectedDate,
       bookingStatus: dashboard.bookingStatus,
-      defaultSlotId: dashboard.defaultSlotId,
+      serverNowIso: dashboard.currentTimeIso,
+      bookingOpenAtIso: dashboard.bookingOpenAtIso,
+      defaultSlotId: initialSlotId,
+      defaultRoomId: initialRoomId,
       initialPage,
-      slotDetails: publicSlotState,
+      roomDetails: publicRoomState,
       summary: dashboard.summary,
       formValues,
+      waitlistPrompt,
     }),
   });
 }
@@ -279,6 +307,27 @@ app.get("/", (req, res) => {
 app.post("/reservations", (req, res) => {
   try {
     const result = createReservation(req.body);
+
+    if (result.status === "waitlist_confirm_required") {
+      renderPublicPage(req, res, {
+        statusCode: 409,
+        message: `${result.slot.label} ${result.room.name}은 먼저 신청한 팀이 예약을 완료했습니다.`,
+        level: "info",
+        formValues: req.body,
+        date: result.reservationDate,
+        page: "form",
+        roomId: result.room.id,
+        slotId: result.slot.id,
+        waitlistPrompt: {
+          roomId: result.room.id,
+          slotId: result.slot.id,
+          message: `지금 신청하면 ${result.room.name} ${result.slot.label} 대기 ${result.waitlistPosition}번으로 등록됩니다.`,
+          waitlistPosition: result.waitlistPosition,
+        },
+      });
+      return;
+    }
+
     const message =
       result.status === "confirmed"
         ? `${result.slot.label} ${result.room.name} 예약이 완료되었습니다.`
@@ -287,7 +336,12 @@ app.post("/reservations", (req, res) => {
     redirectWithFlash(
       res,
       "/",
-      { date: result.reservationDate, page: "board" },
+      {
+        date: result.reservationDate,
+        page: "board",
+        roomId: result.room.id,
+        slotId: result.slot.id,
+      },
       message,
       result.status === "confirmed" ? "success" : "info",
     );
