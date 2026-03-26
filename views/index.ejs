@@ -47,7 +47,10 @@
             </div>
             <div>
               <span>현재 시각</span>
-              <strong id="live-current-time"><%= currentTimeLabel %></strong>
+              <strong id="live-current-time" class="split-time">
+                <span class="split-time-date"><%= currentTimeLabel.split(' ').slice(0, 3).join(' ') %></span>
+                <span class="split-time-clock"><%= currentTimeLabel.split(' ').slice(3).join(' ') %></span>
+              </strong>
             </div>
           </div>
 

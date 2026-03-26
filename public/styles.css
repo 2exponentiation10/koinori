@@ -234,6 +234,20 @@ button {
   line-height: 1.35;
 }
 
+.split-time {
+  display: grid;
+  gap: 2px;
+}
+
+.split-time-date,
+.split-time-clock {
+  display: block;
+}
+
+.split-time-clock {
+  font-variant-numeric: tabular-nums;
+}
+
 .status-banner {
   padding: 12px 14px;
   border-radius: var(--radius-md);

@@ -46,6 +46,12 @@ function initPublicPage(publicState) {
   const submitButton = document.getElementById("booking-submit-button");
   const introConfirmButton = document.getElementById("intro-confirm-button");
   const liveCurrentTime = document.getElementById("live-current-time");
+  const liveCurrentTimeDate = liveCurrentTime
+    ? liveCurrentTime.querySelector(".split-time-date")
+    : null;
+  const liveCurrentTimeClock = liveCurrentTime
+    ? liveCurrentTime.querySelector(".split-time-clock")
+    : null;
   const bookingStatusBanner = document.getElementById("booking-status-banner");
   const summaryRoomLabel = document.getElementById("summary-room-label");
   const summarySlotLabel = document.getElementById("summary-slot-label");
@@ -90,6 +96,9 @@ function initPublicPage(publicState) {
     month: "numeric",
     day: "numeric",
     weekday: "short",
+  });
+  const liveClockTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -114,8 +123,16 @@ function initPublicPage(publicState) {
       : Boolean(publicState.bookingStatus.open);
     const wasOpen = Boolean(publicState.bookingStatus.open);
 
-    if (liveCurrentTime) {
-      liveCurrentTime.textContent = liveClockFormatter.format(now);
+    if (liveCurrentTimeDate) {
+      liveCurrentTimeDate.textContent = liveClockFormatter.format(now);
+    }
+
+    if (liveCurrentTimeClock) {
+      liveCurrentTimeClock.textContent = liveClockTimeFormatter.format(now);
+    }
+
+    if (liveCurrentTime && !liveCurrentTimeDate && !liveCurrentTimeClock) {
+      liveCurrentTime.textContent = `${liveClockFormatter.format(now)} ${liveClockTimeFormatter.format(now)}`;
     }
 
     if (introConfirmButton) {
