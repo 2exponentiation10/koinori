@@ -5,6 +5,7 @@ const compression = require("compression");
 const helmet = require("helmet");
 
 const { MIN_ATTENDEES, NOTICE_ITEMS } = require("./src/config");
+const { buildPublicAppState } = require("./src/publicAppState");
 const {
   buildDashboard,
   cancelReservation,
@@ -14,15 +15,14 @@ const {
 
 const app = express();
 const port = Number(process.env.PORT || 3000);
-const configuredAdminKey = process.env.ADMIN_KEY || "";
-const defaultAdminPin = process.env.ADMIN_PIN || "0191";
+const configuredAdminKey = process.env.ADMIN_KEY || process.env.ADMIN_PIN || "";
 const trustProxyEnabled = process.env.TRUST_PROXY === "1";
 const secureCookiesEnabled = process.env.COOKIE_SECURE === "1";
 const adminCookieName = "koinori_admin";
 const adminSessionMaxAgeMs = 1000 * 60 * 60 * 12;
-const adminCredentialSet = new Set([configuredAdminKey, defaultAdminPin].filter(Boolean));
+const adminCredentialSet = new Set([configuredAdminKey].filter(Boolean));
 const adminAuthEnabled = adminCredentialSet.size > 0;
-const adminSessionSecret = configuredAdminKey || defaultAdminPin;
+const adminSessionSecret = configuredAdminKey;
 const adminSessionToken = adminSessionSecret
   ? crypto.createHash("sha256").update(`admin:${adminSessionSecret}`).digest("hex")
   : "";
@@ -32,6 +32,7 @@ app.set("views", path.join(__dirname, "views"));
 app.set("trust proxy", trustProxyEnabled);
 app.disable("x-powered-by");
 
+app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(compression());
 app.use(
@@ -51,6 +52,7 @@ app.use(
     },
   }),
 );
+app.use(express.static(path.join(__dirname, "dist", "public")));
 app.use(express.static(path.join(__dirname, "public")));
 
 function parseCookies(req) {
@@ -97,35 +99,6 @@ function normalizePage(value, allowedPages, fallback) {
   return allowedPages.includes(value) ? value : fallback;
 }
 
-function normalizePositiveInteger(value, fallback = null) {
-  const parsed = Number.parseInt(value, 10);
-
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    return fallback;
-  }
-
-  return parsed;
-}
-
-function buildPublicRoomState(schedule) {
-  return schedule.rooms.map((room) => ({
-    id: room.id,
-    name: room.name,
-    slots: room.slots.map((slot) => ({
-      slotId: slot.slot.id,
-      label: slot.slot.label,
-      timeRange: slot.slot.timeRange,
-      status: slot.status,
-      interactive: slot.interactive,
-      actionType: slot.actionType,
-      actionLabel: slot.actionLabel,
-      title: slot.title,
-      detail: slot.detail,
-      waitlistCount: slot.waitlistCount,
-    })),
-  }));
-}
-
 function hasAdminSession(req) {
   if (!adminAuthEnabled) {
     return true;
@@ -147,19 +120,6 @@ function requireAdmin(req, res, next) {
   }
 
   next();
-}
-
-function normalizeFormValues(values = {}, fallbackDate, fallbackSlotId) {
-  return {
-    reservationDate: values.reservationDate || fallbackDate,
-    communityName: values.communityName || "",
-    requesterName: values.requesterName || "",
-    attendees: values.attendees || MIN_ATTENDEES,
-    slotId: Number(values.slotId || fallbackSlotId || 1),
-    roomId: values.roomId ? Number(values.roomId) : null,
-    contact: values.contact || "",
-    note: values.note || "",
-  };
 }
 
 function serializeForTemplate(value) {
@@ -199,72 +159,147 @@ function readFlash(req) {
   };
 }
 
-function renderPublicPage(req, res, options = {}) {
-  const dashboard = buildDashboard(options.date || req.query.date);
+function renderPublicApp(req, res, options = {}) {
   const flash = readFlash(req);
-  const initialPage = normalizePage(
-    options.page || req.query.page,
-    ["intro", "room", "slot", "form"],
+  const initialScreen = normalizePage(
+    options.screen || req.query.screen,
+    ["intro", "room", "slot", "form", "status"],
     "intro",
   );
-  const formValues = normalizeFormValues(
-    options.formValues,
-    dashboard.selectedDate,
-    dashboard.defaultSlotId,
-  );
-  const publicRoomState = buildPublicRoomState(dashboard.schedule);
-  const fallbackRoom =
-    publicRoomState.find((room) => room.slots.some((slot) => slot.interactive)) || publicRoomState[0];
-  const initialRoomId = normalizePositiveInteger(
-    options.roomId || req.query.roomId || formValues.roomId,
-    fallbackRoom ? fallbackRoom.id : 1,
-  );
-  const initialSlotId = normalizePositiveInteger(
-    options.slotId || req.query.slotId || formValues.slotId,
-    dashboard.defaultSlotId,
-  );
-  const waitlistPrompt = options.waitlistPrompt || null;
+  const initialState = buildPublicAppState({
+    dateInput: options.date || req.query.date,
+    initialScreen,
+    formValues: options.formValues,
+    roomId: options.roomId || req.query.roomId,
+    slotId: options.slotId || req.query.slotId,
+    message: options.message || flash.message,
+    level: options.level || flash.level,
+    waitlistPrompt: options.waitlistPrompt,
+  });
 
-  res.status(options.statusCode || 200).render("index", {
-    ...dashboard,
-    initialPage,
-    noticeItems: NOTICE_ITEMS,
-    minAttendees: MIN_ATTENDEES,
-    flashMessage: options.message || flash.message,
-    flashLevel: options.level || flash.level,
-    formValues,
-    adminReturnTo: `/admin?date=${encodeURIComponent(dashboard.selectedDate)}`,
-    initialPublicRoomId: initialRoomId,
-    initialPublicSlotId: initialSlotId,
-    serializedPublicState: serializeForTemplate({
-      selectedDate: dashboard.selectedDate,
-      bookingStatus: dashboard.bookingStatus,
-      serverNowIso: dashboard.currentTimeIso,
-      bookingOpenAtIso: dashboard.bookingOpenAtIso,
-      defaultSlotId: initialSlotId,
-      defaultRoomId: initialRoomId,
-      initialPage,
-      roomDetails: publicRoomState,
-      summary: dashboard.summary,
-      formValues,
-      waitlistPrompt,
-    }),
+  res.status(options.statusCode || 200).render("public-app", {
+    appTitle: initialState.appTitle,
+    serializedInitialState: serializeForTemplate(initialState),
   });
 }
 
-function renderStatusPage(req, res, options = {}) {
-  const dashboard = buildDashboard(options.date || req.query.date);
-  const flash = readFlash(req);
-  const roomId = normalizePositiveInteger(options.roomId || req.query.roomId, null);
-  const selectedRoom =
-    dashboard.schedule.rooms.find((room) => room.id === roomId) || dashboard.schedule.rooms[0] || null;
+function buildWaitlistPrompt(result) {
+  return {
+    roomId: result.room.id,
+    slotId: result.slot.id,
+    message: `지금 신청하면 ${result.room.name} ${result.slot.label} 대기 ${result.waitlistPosition}번으로 등록됩니다.`,
+    waitlistPosition: result.waitlistPosition,
+  };
+}
 
-  res.status(options.statusCode || 200).render("status", {
-    ...dashboard,
-    flashMessage: options.message || flash.message,
-    flashLevel: options.level || flash.level,
-    selectedStatusRoom: selectedRoom,
-  });
+function handlePublicReservation(req, res, options = {}) {
+  const wantsJson = Boolean(options.json);
+
+  try {
+    const result = createReservation(req.body);
+
+    if (result.status === "waitlist_confirm_required") {
+      const waitlistPrompt = buildWaitlistPrompt(result);
+      const message = `${result.slot.label} ${result.room.name}은 먼저 신청한 팀이 예약을 완료했습니다.`;
+
+      if (wantsJson) {
+        res.status(409).json({
+          ok: false,
+          code: "WAITLIST_CONFIRM_REQUIRED",
+          message,
+          state: buildPublicAppState({
+            dateInput: result.reservationDate,
+            initialScreen: "form",
+            formValues: req.body,
+            roomId: result.room.id,
+            slotId: result.slot.id,
+            message,
+            level: "info",
+            waitlistPrompt,
+          }),
+        });
+        return;
+      }
+
+      renderPublicApp(req, res, {
+        statusCode: 409,
+        message,
+        level: "info",
+        formValues: req.body,
+        date: result.reservationDate,
+        screen: "form",
+        roomId: result.room.id,
+        slotId: result.slot.id,
+        waitlistPrompt,
+      });
+      return;
+    }
+
+    const message =
+      result.status === "confirmed"
+        ? `${result.slot.label} ${result.room.name} 예약이 완료되었습니다.`
+        : `${result.slot.label} ${result.room.name} 대기 ${result.waitlistPosition}번으로 등록되었습니다.`;
+    const level = result.status === "confirmed" ? "success" : "info";
+
+    if (wantsJson) {
+      res.json({
+        ok: true,
+        status: result.status,
+        message,
+        state: buildPublicAppState({
+          dateInput: result.reservationDate,
+          initialScreen: "status",
+          roomId: result.room.id,
+          slotId: result.slot.id,
+          message,
+          level,
+        }),
+      });
+      return;
+    }
+
+    redirectWithFlash(
+      res,
+      "/status",
+      {
+        date: result.reservationDate,
+        roomId: result.room.id,
+      },
+      message,
+      level,
+    );
+  } catch (error) {
+    const message = error.message || "예약 처리 중 오류가 발생했습니다.";
+
+    if (wantsJson) {
+      res.status(400).json({
+        ok: false,
+        code: "VALIDATION_ERROR",
+        message,
+        state: buildPublicAppState({
+          dateInput: req.body.reservationDate,
+          initialScreen: "form",
+          formValues: req.body,
+          roomId: req.body.roomId,
+          slotId: req.body.slotId,
+          message,
+          level: "error",
+        }),
+      });
+      return;
+    }
+
+    renderPublicApp(req, res, {
+      statusCode: 400,
+      message,
+      level: "error",
+      formValues: req.body,
+      date: req.body.reservationDate,
+      screen: "form",
+      roomId: req.body.roomId,
+      slotId: req.body.slotId,
+    });
+  }
 }
 
 function renderAdminPage(req, res, options = {}) {
@@ -320,11 +355,11 @@ function renderAdminLoginPage(req, res, options = {}) {
 }
 
 app.get("/", (req, res) => {
-  renderPublicPage(req, res);
+  renderPublicApp(req, res, { screen: "intro" });
 });
 
 app.get("/status", (req, res) => {
-  renderStatusPage(req, res);
+  renderPublicApp(req, res, { screen: "status" });
 });
 
 app.get("/board", (req, res) => {
@@ -335,54 +370,11 @@ app.get("/board", (req, res) => {
 });
 
 app.post("/reservations", (req, res) => {
-  try {
-    const result = createReservation(req.body);
+  handlePublicReservation(req, res);
+});
 
-    if (result.status === "waitlist_confirm_required") {
-      renderPublicPage(req, res, {
-        statusCode: 409,
-        message: `${result.slot.label} ${result.room.name}은 먼저 신청한 팀이 예약을 완료했습니다.`,
-        level: "info",
-        formValues: req.body,
-        date: result.reservationDate,
-        page: "form",
-        roomId: result.room.id,
-        slotId: result.slot.id,
-        waitlistPrompt: {
-          roomId: result.room.id,
-          slotId: result.slot.id,
-          message: `지금 신청하면 ${result.room.name} ${result.slot.label} 대기 ${result.waitlistPosition}번으로 등록됩니다.`,
-          waitlistPosition: result.waitlistPosition,
-        },
-      });
-      return;
-    }
-
-    const message =
-      result.status === "confirmed"
-        ? `${result.slot.label} ${result.room.name} 예약이 완료되었습니다.`
-        : `${result.slot.label} ${result.room.name} 대기 ${result.waitlistPosition}번으로 등록되었습니다.`;
-
-    redirectWithFlash(
-      res,
-      "/status",
-      {
-        date: result.reservationDate,
-        roomId: result.room.id,
-      },
-      message,
-      result.status === "confirmed" ? "success" : "info",
-    );
-  } catch (error) {
-    renderPublicPage(req, res, {
-      statusCode: 400,
-      message: error.message || "예약 처리 중 오류가 발생했습니다.",
-      level: "error",
-      formValues: req.body,
-      date: req.body.reservationDate,
-      page: "form",
-    });
-  }
+app.post("/api/reservations", (req, res) => {
+  handlePublicReservation(req, res, { json: true });
 });
 
 app.get("/admin", requireAdmin, (req, res) => {

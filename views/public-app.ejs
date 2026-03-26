@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#21493f" />
+    <title><%= appTitle %></title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="mobile-app public-app">
+    <div id="root"></div>
+    <noscript>
+      <main class="page-shell">
+        <section class="page-card">
+          <h1>KOINORI</h1>
+          <p class="hero-text">이 화면은 자바스크립트가 필요합니다. 브라우저 설정을 확인한 뒤 다시 열어 주세요.</p>
+        </section>
+      </main>
+    </noscript>
+    <script id="initial-public-state" type="application/json"><%- serializedInitialState %></script>
+    <script src="/public-app.js" defer></script>
+  </body>
+</html>
