@@ -1,5 +1,10 @@
 const APP_TIME_ZONE = "Asia/Seoul";
 const MIN_ATTENDEES = 4;
+const ROOM_MODES = {
+  AVAILABLE: "available",
+  FIXED: "fixed",
+  CLOSED: "closed",
+};
 
 const NOTICE_ITEMS = [
   "주일 룸 예약 최소 인원은 4명입니다. 4명 이상 모임만 신청해 주세요.",
@@ -22,19 +27,49 @@ const ROOMS = [
 ];
 
 const TIME_SLOTS = [
-  { id: 1, label: "1타임", startsAt: "09:00", endsAt: "10:30", reservable: true },
-  { id: 2, label: "2타임", startsAt: "10:30", endsAt: "12:30", reservable: true },
-  { id: 3, label: "3타임", startsAt: "12:30", endsAt: "14:30", reservable: true },
-  { id: 4, label: "4타임", startsAt: "14:30", endsAt: "16:30", reservable: true },
+  {
+    id: 1,
+    label: "1타임",
+    startsAt: "09:00",
+    endsAt: "10:30",
+    defaultMode: ROOM_MODES.AVAILABLE,
+  },
+  {
+    id: 2,
+    label: "2타임",
+    startsAt: "10:30",
+    endsAt: "12:30",
+    defaultMode: ROOM_MODES.AVAILABLE,
+  },
+  {
+    id: 3,
+    label: "3타임",
+    startsAt: "12:30",
+    endsAt: "14:30",
+    defaultMode: ROOM_MODES.AVAILABLE,
+  },
+  {
+    id: 4,
+    label: "4타임",
+    startsAt: "14:30",
+    endsAt: "16:30",
+    defaultMode: ROOM_MODES.AVAILABLE,
+  },
   {
     id: 5,
     label: "5타임",
     startsAt: "16:30",
     endsAt: "18:00",
-    reservable: false,
-    fixedLabel: "젊은이교회 셀 고정 사용",
+    defaultMode: ROOM_MODES.FIXED,
+    defaultLabel: "젊은이교회 셀 고정 사용",
   },
-  { id: 6, label: "6타임", startsAt: "18:00", endsAt: "19:30", reservable: true },
+  {
+    id: 6,
+    label: "6타임",
+    startsAt: "18:00",
+    endsAt: "19:30",
+    defaultMode: ROOM_MODES.AVAILABLE,
+  },
 ];
 
 module.exports = {
@@ -42,5 +77,6 @@ module.exports = {
   MIN_ATTENDEES,
   NOTICE_ITEMS,
   ROOMS,
+  ROOM_MODES,
   TIME_SLOTS,
 };

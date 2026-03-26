@@ -3,151 +3,240 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#1f4d45" />
-    <title>주일 룸 예약</title>
+    <meta name="theme-color" content="#204f47" />
+    <title>KOINORI 주일 룸 예약</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
-  <body class="mobile-app">
-    <% const initialSlot = slotOverview.find((slot) => slot.id === Number(formValues.slotId)) || slotOverview.find((slot) => slot.reservable); %>
+  <body class="mobile-app public-app">
     <main class="page-shell">
-      <section class="hero">
-        <div class="hero-copy">
-          <p class="eyebrow">KOINORI MOBILE</p>
-          <h1>주일 룸 예약 서비스</h1>
+      <header class="app-header">
+        <button
+          type="button"
+          class="brand-button"
+          id="admin-secret-trigger"
+          aria-label="KOINORI 관리자 열기"
+        >
+          <img src="/koinori-logo.svg" alt="KOINORI 로고" class="brand-logo" />
+          <span class="brand-copy">
+            <strong>KOINORI</strong>
+            <small>주일 룸 예약</small>
+          </span>
+        </button>
+
+        <article class="hero-card">
+          <p class="eyebrow">모바일 예약</p>
+          <h1>방을 직접 고르고 신청하세요</h1>
           <p class="hero-text">
-            목요일 오전 10시에 예약이 열리고, 자리가 없으면 자동으로 대기 명단에 등록되는
-            모바일 전용 예약 서비스입니다.
+            긴 스크롤 대신 순서대로 넘어가는 화면입니다. 날짜를 고르고, 타임을 누르고, 원하는
+            방을 선택하면 바로 신청할 수 있습니다.
           </p>
-          <div class="badge-row">
-            <span class="badge">모바일 전용</span>
-            <span class="badge">방 9개</span>
-            <span class="badge">예약 타임 5개</span>
-            <span class="badge">5타임 고정 사용</span>
+          <div class="hero-meta">
+            <div>
+              <span>선택한 날짜</span>
+              <strong><%= selectedDateLabel %></strong>
+            </div>
+            <div>
+              <span>현재 시각</span>
+              <strong><%= currentTimeLabel %></strong>
+            </div>
+            <div>
+              <span>예약 오픈</span>
+              <strong><%= bookingOpenAtLabel %></strong>
+            </div>
           </div>
+          <div class="status-banner status-<%= bookingStatus.kind %>"><%= bookingStatus.message %></div>
+        </article>
+      </header>
+
+      <% if (flashMessage) { %>
+        <div class="flash flash-<%= flashLevel %>"><%= flashMessage %></div>
+      <% } %>
+
+      <nav class="page-tabs" aria-label="예약 단계">
+        <button type="button" class="page-tab is-active" data-go-page="date">1. 날짜</button>
+        <button type="button" class="page-tab" data-go-page="slot">2. 타임</button>
+        <button type="button" class="page-tab" data-go-page="room">3. 방</button>
+        <button type="button" class="page-tab" data-go-page="form">4. 신청</button>
+        <button type="button" class="page-tab" data-go-page="board">5. 현황</button>
+      </nav>
+
+      <section class="page-card is-active" data-page="date">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">STEP 1</p>
+            <h2>예약할 주일을 고르세요</h2>
+          </div>
+          <p class="section-guide">목요일 오전 10시 이후부터 선착순 접수됩니다.</p>
         </div>
-        <aside class="hero-panel">
-          <p class="panel-label">선택한 주일</p>
-          <h2><%= selectedDateLabel %></h2>
-          <p class="meta-line">현재 시각: <strong><%= currentTimeLabel %></strong></p>
-          <p class="meta-line">예약 오픈: <strong><%= bookingOpenAtLabel %></strong></p>
-          <div class="status-pill status-<%= bookingStatus.kind %>"><%= bookingStatus.message %></div>
-        </aside>
+
+        <div class="choice-grid choice-grid-dates">
+          <% sundayOptions.forEach((option) => { %>
+            <a
+              href="/?date=<%= option.date %>"
+              class="choice-card <%= option.selected ? 'choice-card-active' : '' %>"
+            >
+              <strong><%= option.label %></strong>
+              <span>예약 오픈: <%= option.openAtLabel %></span>
+            </a>
+          <% }) %>
+        </div>
+
+        <div class="rule-list">
+          <% noticeItems.forEach((notice) => { %>
+            <article class="rule-item">
+              <strong>안내</strong>
+              <p><%= notice %></p>
+            </article>
+          <% }) %>
+        </div>
+
+        <div class="page-actions">
+          <button type="button" class="primary-button" data-go-page="slot">다음: 타임 고르기</button>
+        </div>
       </section>
 
-      <section class="panel" id="summary-panel">
-        <div class="section-header">
+      <section class="page-card" data-page="slot">
+        <div class="section-heading">
           <div>
-            <p class="eyebrow">SUMMARY</p>
-            <h2><%= selectedDateLabel %> 빠른 현황</h2>
+            <p class="eyebrow">STEP 2</p>
+            <h2>이용 타임을 선택하세요</h2>
           </div>
+          <p class="section-guide">예약 가능, 만석, 고정 사용 상태를 바로 확인할 수 있습니다.</p>
         </div>
 
         <div class="summary-strip">
           <article class="summary-card">
             <span>확정 예약</span>
             <strong><%= summary.totalConfirmed %></strong>
-            <small>전체 가능 배정 <%= summary.totalCapacity %>건</small>
           </article>
           <article class="summary-card">
             <span>대기 팀</span>
             <strong><%= summary.totalWaitlisted %></strong>
-            <small>만석 타임 자동 대기 등록</small>
           </article>
           <article class="summary-card">
-            <span>남은 방 배정</span>
+            <span>남은 방</span>
             <strong><%= summary.remainingAssignments %></strong>
-            <small>예약 가능한 타임 <%= summary.openSlotCount %>개</small>
-          </article>
-          <article class="summary-card">
-            <span>가동률</span>
-            <strong><%= summary.occupancyPercent %>%</strong>
-            <small>예약 타임 <%= summary.reservableSlotCount %>개 기준</small>
           </article>
         </div>
-      </section>
 
-      <section class="panel">
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">RULES</p>
-            <h2>운영 규칙</h2>
-          </div>
-          <div class="slot-strip">
-            <% timeSlots.forEach((slot) => { %>
-              <div class="slot-chip <%= slot.reservable ? '' : 'slot-chip-fixed' %>">
-                <strong><%= slot.label %></strong>
-                <span><%= slot.timeRange %></span>
-              </div>
-            <% }) %>
-          </div>
-        </div>
-
-        <div class="notice-grid">
-          <% noticeItems.forEach((notice) => { %>
-            <article class="notice-card">
-              <p><%= notice %></p>
-            </article>
-          <% }) %>
-        </div>
-      </section>
-
-      <section class="panel" id="availability-panel">
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">AVAILABILITY</p>
-            <h2>타임별 남은 방</h2>
-          </div>
-          <p class="section-note">타임을 누르면 아래 예약 폼이 자동으로 채워집니다.</p>
-        </div>
-
-        <div class="availability-grid">
-          <% slotOverview.forEach((slot) => { %>
+        <div class="choice-grid">
+          <% slotDetails.forEach((slot) => { %>
             <button
               type="button"
-              class="availability-card availability-card-<%= slot.status %>"
+              class="slot-card slot-card-<%= slot.status %>"
               data-slot-id="<%= slot.id %>"
-              data-slot-label="<%= slot.label %>"
-              data-slot-detail="<%= slot.timeRange %> · <%= slot.availabilityLabel %> · <%= slot.detailLabel %>"
-              <%= slot.reservable ? '' : 'disabled' %>
+              data-slot-bookable="<%= slot.bookable ? '1' : '0' %>"
+              data-slot-waitlist="<%= slot.canWaitlist ? '1' : '0' %>"
+              <%= slot.bookable ? '' : 'disabled' %>
             >
-              <div class="availability-card-top">
-                <div>
-                  <p class="card-kicker"><%= slot.label %></p>
-                  <h3><%= slot.timeRange %></h3>
-                </div>
-                <span class="availability-badge"><%= slot.availabilityLabel %></span>
-              </div>
-              <p class="availability-detail"><%= slot.detailLabel %></p>
-              <span class="availability-action">
-                <%= slot.reservable ? (bookingStatus.open ? slot.actionLabel : '오픈 전') : slot.actionLabel %>
+              <span class="slot-card-head">
+                <strong><%= slot.label %></strong>
+                <small><%= slot.timeRange %></small>
               </span>
+              <span class="slot-card-badge"><%= slot.availabilityLabel %></span>
+              <span class="slot-card-detail"><%= slot.detailLabel %></span>
+              <span class="slot-card-action"><%= slot.actionLabel %></span>
             </button>
           <% }) %>
         </div>
+
+        <div class="page-actions dual-actions">
+          <button type="button" class="secondary-button" data-go-page="date">이전</button>
+          <button type="button" class="primary-button" data-go-page="room">다음: 방 고르기</button>
+        </div>
       </section>
 
-      <section class="panel" id="booking-panel">
-        <div class="section-header">
+      <section class="page-card" data-page="room">
+        <div class="section-heading">
           <div>
-            <p class="eyebrow">BOOK</p>
-            <h2>예약 신청</h2>
+            <p class="eyebrow">STEP 3</p>
+            <h2>방을 선택하세요</h2>
+          </div>
+          <p class="section-guide" id="room-step-guide">타임을 먼저 선택하면 해당 타임의 방 목록이 나옵니다.</p>
+        </div>
+
+        <div class="selection-banner" id="selected-slot-banner">
+          <strong>선택한 타임 없음</strong>
+          <span>먼저 위 단계에서 타임을 선택해 주세요.</span>
+        </div>
+
+        <% slotDetails.forEach((slot) => { %>
+          <section class="room-panel" data-slot-rooms="<%= slot.id %>" <%= slot.id === defaultSlotId ? '' : 'hidden' %>>
+            <div class="room-panel-header">
+              <h3><%= slot.label %> <span><%= slot.timeRange %></span></h3>
+              <p><%= slot.detailLabel %></p>
+            </div>
+
+            <% if (!slot.bookable) { %>
+              <div class="empty-state">
+                이 타임은 현재 예약을 받지 않습니다. 관리자 설정에서 예약 가능 방을 열어야 신청할 수
+                있습니다.
+              </div>
+            <% } else { %>
+              <div class="choice-grid choice-grid-rooms">
+                <% slot.rooms.forEach((room) => { %>
+                  <button
+                    type="button"
+                    class="room-card room-card-<%= room.status %>"
+                    data-slot-room-id="<%= room.roomId %>"
+                    data-slot-id="<%= slot.id %>"
+                    data-room-selectable="<%= room.selectable ? '1' : '0' %>"
+                    <%= room.selectable ? '' : 'disabled' %>
+                  >
+                    <span class="room-card-head">
+                      <strong><%= room.roomName %></strong>
+                      <small><%= room.status === 'available' ? '선택 가능' : room.status === 'reserved' ? '이미 예약됨' : room.status === 'fixed' ? '고정 사용' : '운영 안 함' %></small>
+                    </span>
+                    <span class="room-card-title"><%= room.title %></span>
+                    <span class="room-card-detail"><%= room.detail %></span>
+                  </button>
+                <% }) %>
+              </div>
+
+              <% if (slot.canWaitlist) { %>
+                <button type="button" class="waitlist-button" data-waitlist-slot="<%= slot.id %>">
+                  방이 모두 찼습니다. 이 타임 대기 신청으로 계속하기
+                </button>
+              <% } %>
+            <% } %>
+          </section>
+        <% }) %>
+
+        <div class="page-actions dual-actions">
+          <button type="button" class="secondary-button" data-go-page="slot">이전</button>
+          <button type="button" class="primary-button" data-go-page="form">다음: 신청서 작성</button>
+        </div>
+      </section>
+
+      <section class="page-card" data-page="form">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">STEP 4</p>
+            <h2>신청 정보를 입력하세요</h2>
+          </div>
+          <p class="section-guide">고령 사용자도 쉽게 보이도록 큰 입력창과 확인 문구를 넣었습니다.</p>
+        </div>
+
+        <div class="selection-summary" id="booking-summary">
+          <div>
+            <span>예약 날짜</span>
+            <strong><%= selectedDateLabel %></strong>
+          </div>
+          <div>
+            <span>선택 타임</span>
+            <strong id="summary-slot-label">선택 전</strong>
+          </div>
+          <div>
+            <span>선택 방</span>
+            <strong id="summary-room-label">선택 전</strong>
           </div>
         </div>
 
-        <% if (flashMessage) { %>
-          <div class="flash flash-<%= flashLevel %>"><%= flashMessage %></div>
-        <% } %>
-
-        <div class="booking-selection" id="selected-slot-display">
-          현재 선택: <strong><%= initialSlot ? initialSlot.label : '1타임' %></strong>
-          <span><%= initialSlot ? `${initialSlot.timeRange} · ${initialSlot.availabilityLabel}` : '' %></span>
-        </div>
-
         <form class="booking-form" id="booking-form" method="post" action="/reservations">
-          <label class="field">
-            <span>예약 날짜</span>
-            <input id="reservation-date-input" type="date" name="reservationDate" value="<%= formValues.reservationDate %>" required />
-          </label>
+          <input id="reservation-date-input" type="hidden" name="reservationDate" value="<%= formValues.reservationDate %>" />
+          <input id="slot-id-input" type="hidden" name="slotId" value="<%= formValues.slotId %>" />
+          <input id="room-id-input" type="hidden" name="roomId" value="<%= formValues.roomId || '' %>" />
+          <input id="join-waitlist-input" type="hidden" name="joinWaitlist" value="<%= formValues.joinWaitlist %>" />
 
           <label class="field">
             <span>공동체 이름</span>
@@ -183,142 +272,126 @@
           </label>
 
           <label class="field">
-            <span>이용 타임</span>
-            <select id="slot-select" name="slotId" required>
-              <% timeSlots.filter((slot) => slot.reservable).forEach((slot) => { %>
-                <option value="<%= slot.id %>" <%= Number(formValues.slotId) === slot.id ? 'selected' : '' %>>
-                  <%= slot.label %> (<%= slot.timeRange %>)
-                </option>
-              <% }) %>
-            </select>
-          </label>
-
-          <label class="field">
             <span>연락처</span>
             <input
               type="text"
               name="contact"
               value="<%= formValues.contact %>"
-              placeholder="선택 입력"
+              placeholder="문자나 전화 가능한 번호"
             />
           </label>
 
           <label class="field field-wide">
             <span>메모</span>
-            <textarea name="note" rows="3" placeholder="추가 전달사항이 있으면 입력해 주세요."><%= formValues.note %></textarea>
+            <textarea name="note" rows="4" placeholder="브레이크 타임, 추가 전달사항 등을 적어 주세요."><%= formValues.note %></textarea>
           </label>
 
-          <div class="form-actions">
-            <p class="helper-text">
-              같은 날짜/타임에는 선착순으로 남는 방에 자동 배정됩니다. 남는 방이 없으면 대기로
-              등록됩니다.
-            </p>
-            <button type="submit" class="primary-button" <%= bookingStatus.open ? '' : 'disabled' %>>
+          <div class="helper-box">
+            자리가 있는 타임은 선택한 방으로 바로 예약됩니다. 방이 모두 찬 타임은 대기 신청으로
+            접수됩니다.
+          </div>
+
+          <div class="page-actions dual-actions">
+            <button type="button" class="secondary-button" data-go-page="room">이전</button>
+            <button
+              type="submit"
+              class="primary-button"
+              id="booking-submit-button"
+              <%= bookingStatus.open ? '' : 'disabled' %>
+            >
               예약 신청하기
             </button>
           </div>
         </form>
       </section>
 
-      <section class="panel" id="board-panel">
-        <div class="section-header">
+      <section class="page-card" data-page="board">
+        <div class="section-heading">
           <div>
-            <p class="eyebrow">BOARD</p>
-            <h2>예약 현황표</h2>
+            <p class="eyebrow">STEP 5</p>
+            <h2>현재 예약 현황</h2>
           </div>
-
-          <form class="toolbar" method="get" action="/">
-            <input type="date" name="date" value="<%= selectedDate %>" required />
-            <button type="submit" class="secondary-button">현황 보기</button>
-          </form>
+          <p class="section-guide">한 번에 한 타임씩 보여주어 방 상태를 보기 쉽게 정리했습니다.</p>
         </div>
 
-        <div class="chip-row">
-          <% sundayOptions.forEach((option) => { %>
-            <a class="date-chip <%= option.selected ? 'date-chip-active' : '' %>" href="/?date=<%= option.date %>">
-              <span><%= option.label %></span>
-              <small>오픈 <%= option.openAtLabel %></small>
-            </a>
+        <div class="slot-chip-row">
+          <% slotDetails.forEach((slot) => { %>
+            <button type="button" class="slot-chip-button <%= slot.id === defaultSlotId ? 'is-active' : '' %>" data-board-slot-tab="<%= slot.id %>">
+              <strong><%= slot.label %></strong>
+              <span><%= slot.timeRange %></span>
+            </button>
           <% }) %>
         </div>
 
-        <div class="room-grid">
-          <% schedule.rooms.forEach((room) => { %>
-            <article class="room-card">
-              <header>
-                <h3><%= room.name %></h3>
-              </header>
+        <% slotDetails.forEach((slot) => { %>
+          <section class="board-slot-panel <%= slot.id === defaultSlotId ? 'is-active' : '' %>" data-board-slot="<%= slot.id %>">
+            <div class="selection-banner">
+              <strong><%= slot.label %> <%= slot.timeRange %></strong>
+              <span><%= slot.detailLabel %></span>
+            </div>
 
-              <div class="room-slots">
-                <% room.slots.forEach((cell) => { %>
-                  <div class="slot-row slot-row-<%= cell.type %>">
-                    <div class="slot-heading">
-                      <strong><%= cell.slot.label %></strong>
-                      <span><%= cell.slot.timeRange %></span>
-                    </div>
+            <div class="choice-grid choice-grid-rooms">
+              <% slot.rooms.forEach((room) => { %>
+                <article class="board-room-card board-room-card-<%= room.status %>">
+                  <span class="room-card-head">
+                    <strong><%= room.roomName %></strong>
+                    <small><%= room.status === 'available' ? '예약 가능' : room.status === 'reserved' ? '예약 중' : room.status === 'fixed' ? '고정 사용' : '운영 안 함' %></small>
+                  </span>
+                  <span class="room-card-title"><%= room.title %></span>
+                  <span class="room-card-detail"><%= room.detail %></span>
+                </article>
+              <% }) %>
+            </div>
 
-                    <% if (cell.type === 'reserved') { %>
-                      <div class="slot-body">
-                        <strong><%= cell.reservation.communityName %></strong>
-                        <span><%= cell.reservation.requesterName %> · <%= cell.reservation.attendees %>명</span>
-                      </div>
-                    <% } else if (cell.type === 'fixed') { %>
-                      <div class="slot-body">
-                        <strong>고정 사용</strong>
-                        <span><%= cell.label %></span>
-                      </div>
-                    <% } else { %>
-                      <div class="slot-body slot-empty">
-                        <strong>예약 가능</strong>
-                        <span>현재 비어 있습니다.</span>
-                      </div>
-                    <% } %>
-                  </div>
-                <% }) %>
+            <% if (slot.waitlistItems.length) { %>
+              <div class="waitlist-panel">
+                <h3>대기 명단</h3>
+                <ol>
+                  <% slot.waitlistItems.forEach((reservation, index) => { %>
+                    <li><%= index + 1 %>. <%= reservation.communityName %> / <%= reservation.requesterName %> / <%= reservation.attendees %>명</li>
+                  <% }) %>
+                </ol>
               </div>
-            </article>
-          <% }) %>
-        </div>
-      </section>
+            <% } %>
+          </section>
+        <% }) %>
 
-      <section class="panel" id="waitlist-panel">
-        <div class="section-header">
-          <div>
-            <p class="eyebrow">WAITLIST</p>
-            <h2>대기 명단</h2>
-          </div>
+        <div class="page-actions dual-actions">
+          <button type="button" class="secondary-button" data-go-page="form">이전</button>
+          <button type="button" class="primary-button" data-go-page="date">처음으로</button>
         </div>
-
-        <% if (!schedule.hasWaitlist) { %>
-          <div class="empty-state">현재 대기 명단은 없습니다.</div>
-        <% } else { %>
-          <div class="waitlist-grid">
-            <% schedule.waitlists.forEach((waitlist) => { %>
-              <article class="waitlist-card">
-                <h3><%= waitlist.slot.label %> <span><%= waitlist.slot.timeRange %></span></h3>
-                <% if (!waitlist.items.length) { %>
-                  <p class="waitlist-empty">대기 없음</p>
-                <% } else { %>
-                  <ol class="waitlist-list">
-                    <% waitlist.items.forEach((reservation, index) => { %>
-                      <li>
-                        <strong><%= index + 1 %>순위</strong>
-                        <span><%= reservation.communityName %> / <%= reservation.requesterName %> / <%= reservation.attendees %>명</span>
-                      </li>
-                    <% }) %>
-                  </ol>
-                <% } %>
-              </article>
-            <% }) %>
-          </div>
-        <% } %>
       </section>
     </main>
-    <nav class="quick-nav" aria-label="빠른 이동">
-      <a href="#availability-panel">타임</a>
-      <a href="#booking-panel">예약</a>
-      <a href="#board-panel">현황</a>
-    </nav>
+
+    <div class="modal-shell" id="admin-access-modal" hidden>
+      <div class="modal-card">
+        <button type="button" class="modal-close" id="admin-modal-close" aria-label="닫기">닫기</button>
+        <img src="/koinori-logo.svg" alt="KOINORI 로고" class="modal-logo" />
+        <p class="eyebrow">관리자 전용</p>
+        <h2>운영 화면 열기</h2>
+        <p class="modal-text">KOINORI 로고를 10번 터치하면 이 화면이 열립니다. 비밀번호는 숫자 4자리입니다.</p>
+
+        <form method="post" action="/admin/login" class="login-form">
+          <input type="hidden" name="returnTo" value="<%= adminReturnTo %>" />
+
+          <label class="field">
+            <span>관리 비밀번호</span>
+            <input
+              type="password"
+              name="adminKey"
+              inputmode="numeric"
+              autocomplete="current-password"
+              placeholder="0191"
+              required
+            />
+          </label>
+
+          <button type="submit" class="primary-button">관리자 들어가기</button>
+        </form>
+      </div>
+    </div>
+
+    <script id="public-state" type="application/json"><%- serializedPublicState %></script>
     <script src="/app.js" defer></script>
   </body>
 </html>

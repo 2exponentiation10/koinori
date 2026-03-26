@@ -3,7 +3,9 @@ const path = require("path");
 
 const Database = require("better-sqlite3");
 
-const dataDir = path.join(__dirname, "..", "data");
+const dataDir = process.env.APP_DATA_DIR
+  ? path.resolve(process.env.APP_DATA_DIR)
+  : path.join(__dirname, "..", "data");
 const databasePath = path.join(dataDir, "reservations.db");
 
 fs.mkdirSync(dataDir, { recursive: true });
@@ -33,6 +35,20 @@ db.exec(`
   CREATE UNIQUE INDEX IF NOT EXISTS idx_confirmed_room_slot
     ON reservations (reservation_date, slot_id, room_id)
     WHERE status = 'confirmed' AND room_id IS NOT NULL;
+
+  CREATE TABLE IF NOT EXISTS room_slot_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reservation_date TEXT NOT NULL,
+    room_id INTEGER NOT NULL,
+    slot_id INTEGER NOT NULL,
+    mode TEXT NOT NULL CHECK (mode IN ('available', 'fixed', 'closed')),
+    label TEXT DEFAULT '',
+    updated_at TEXT NOT NULL,
+    UNIQUE (reservation_date, room_id, slot_id)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_room_slot_settings_date_slot
+    ON room_slot_settings (reservation_date, slot_id);
 `);
 
 module.exports = db;
