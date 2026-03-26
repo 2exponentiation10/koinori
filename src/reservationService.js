@@ -33,7 +33,7 @@ function normalizeDate(input, fallbackNow = getNow()) {
 
 function parseSundayDate(input) {
   if (typeof input !== "string" || !input.trim()) {
-    throw new Error("예약 날짜를 선택해 주세요.");
+    throw new Error("예약 날짜를 확인해 주세요.");
   }
 
   const parsed = DateTime.fromISO(input, { zone: APP_TIME_ZONE }).startOf("day").setLocale("ko");
@@ -88,7 +88,7 @@ function getBookingStatus(sundayDate, now = getNow()) {
   return {
     kind: "open",
     open: true,
-    message: "예약이 열려 있습니다. 원하는 방을 고른 뒤 신청해 주세요.",
+    message: "예약이 열려 있습니다. 원하는 타임과 방을 순서대로 선택해 주세요.",
   };
 }
 
@@ -117,6 +117,7 @@ function getSundayOptions(count = 6, now = getNow()) {
 
   return Array.from({ length: count }, (_, index) => {
     const sundayDate = firstSunday.plus({ weeks: index }).setLocale("ko");
+
     return {
       date: sundayDate.toISODate(),
       label: sundayDate.toFormat("M월 d일 (ccc)"),
@@ -200,7 +201,7 @@ function decorateReservation(reservation) {
     slot: toSlotView(slot),
     roomId: reservation.room_id,
     room,
-    roomName: room ? room.name : "대기",
+    roomName: room ? room.name : "미지정 대기",
     communityName: reservation.community_name,
     requesterName: reservation.requester_name,
     attendees: reservation.attendees,
@@ -239,10 +240,7 @@ function getSlotAvailability(dateIso, slotId) {
   }
 
   const stateMap = buildRoomSlotStateMap(dateIso);
-  const reservableRoomIds = ROOMS.filter(
-    (room) => stateMap.get(makeCellKey(room.id, slotId)).mode === ROOM_MODES.AVAILABLE,
-  ).map((room) => room.id);
-  const occupiedRoomIds = new Set(
+  const confirmedRoomIds = new Set(
     db
       .prepare(
         `
@@ -252,63 +250,169 @@ function getSlotAvailability(dateIso, slotId) {
             AND slot_id = ?
             AND status = 'confirmed'
             AND room_id IS NOT NULL
-          ORDER BY room_id ASC
         `,
       )
       .pluck()
       .all(dateIso, slotId),
   );
-  const availableRoomIds = reservableRoomIds.filter((roomId) => !occupiedRoomIds.has(roomId));
+  const roomStates = ROOMS.map((room) => {
+    const state = stateMap.get(makeCellKey(room.id, slotId));
+
+    return {
+      roomId: room.id,
+      roomName: room.name,
+      mode: state.mode,
+      isOccupied: confirmedRoomIds.has(room.id),
+    };
+  });
+  const reservableRoomIds = roomStates
+    .filter((room) => room.mode === ROOM_MODES.AVAILABLE)
+    .map((room) => room.roomId);
+  const availableRoomIds = roomStates
+    .filter((room) => room.mode === ROOM_MODES.AVAILABLE && !room.isOccupied)
+    .map((room) => room.roomId);
 
   return {
     slot: toSlotView(slot),
     stateMap,
+    roomStates,
     reservableRoomIds,
     availableRoomIds,
-    occupiedRoomIds,
   };
+}
+
+function findNextWaitlistedReservation(reservationDate, slotId, roomId) {
+  return db
+    .prepare(
+      `
+        SELECT *
+        FROM reservations
+        WHERE reservation_date = ?
+          AND slot_id = ?
+          AND status = 'waitlisted'
+          AND (room_id = ? OR room_id IS NULL)
+        ORDER BY
+          CASE WHEN room_id = ? THEN 0 ELSE 1 END,
+          created_at ASC,
+          id ASC
+        LIMIT 1
+      `,
+    )
+    .get(reservationDate, slotId, roomId, roomId);
+}
+
+function promoteWaitlistForRoom(reservationDate, slotId, roomId, updatedAt) {
+  const availability = getSlotAvailability(reservationDate, slotId);
+  const roomState = availability.roomStates.find((room) => room.roomId === roomId);
+
+  if (!roomState || roomState.mode !== ROOM_MODES.AVAILABLE || roomState.isOccupied) {
+    return null;
+  }
+
+  const nextWaitlisted = findNextWaitlistedReservation(reservationDate, slotId, roomId);
+
+  if (!nextWaitlisted) {
+    return null;
+  }
+
+  db.prepare(
+    `
+      UPDATE reservations
+      SET status = 'confirmed',
+          room_id = ?,
+          updated_at = ?
+      WHERE id = ?
+    `,
+  ).run(roomId, updatedAt, nextWaitlisted.id);
+
+  return decorateReservation({
+    ...nextWaitlisted,
+    status: "confirmed",
+    room_id: roomId,
+  });
+}
+
+function promoteWaitlistsForSlot(reservationDate, slotId, updatedAt) {
+  const promotions = [];
+
+  ROOMS.forEach((room) => {
+    const promoted = promoteWaitlistForRoom(reservationDate, slotId, room.id, updatedAt);
+
+    if (promoted) {
+      promotions.push(promoted);
+    }
+  });
+
+  return promotions;
 }
 
 function buildSchedule(dateIso) {
   const roomSlotStateMap = buildRoomSlotStateMap(dateIso);
   const activeReservations = listReservationsByDate(dateIso);
+  const confirmedReservations = activeReservations.filter((reservation) => reservation.status === "confirmed");
+  const waitlistedReservations = activeReservations.filter((reservation) => reservation.status === "waitlisted");
   const confirmedMap = new Map();
-  const waitlistMap = new Map(TIME_SLOTS.map((slot) => [slot.id, []]));
+  const roomWaitlistMap = new Map();
+  const legacyWaitlistMap = new Map(TIME_SLOTS.map((slot) => [slot.id, []]));
 
-  activeReservations.forEach((reservation) => {
-    if (reservation.status === "confirmed" && reservation.roomId) {
-      confirmedMap.set(makeCellKey(reservation.roomId, reservation.slotId), reservation);
+  waitlistedReservations.forEach((reservation) => {
+    if (reservation.roomId) {
+      const key = makeCellKey(reservation.roomId, reservation.slotId);
+      const list = roomWaitlistMap.get(key) || [];
+
+      list.push(reservation);
+      roomWaitlistMap.set(key, list);
       return;
     }
 
-    const items = waitlistMap.get(reservation.slotId);
+    const legacyList = legacyWaitlistMap.get(reservation.slotId) || [];
 
-    if (items) {
-      items.push(reservation);
+    legacyList.push(reservation);
+    legacyWaitlistMap.set(reservation.slotId, legacyList);
+  });
+
+  confirmedReservations.forEach((reservation) => {
+    if (reservation.roomId) {
+      confirmedMap.set(makeCellKey(reservation.roomId, reservation.slotId), reservation);
     }
   });
 
   const slotDetails = TIME_SLOTS.map((slot) => {
     const slotView = toSlotView(slot);
+    const legacyWaitlistItems = legacyWaitlistMap.get(slot.id) || [];
     const rooms = ROOMS.map((room) => {
       const state = roomSlotStateMap.get(makeCellKey(room.id, slot.id));
       const reservation = confirmedMap.get(makeCellKey(room.id, slot.id)) || null;
+      const waitlistItems = roomWaitlistMap.get(makeCellKey(room.id, slot.id)) || [];
+      const waitlistCount = waitlistItems.length;
       let status = "available";
       let title = "예약 가능";
-      let detail = "이 방을 바로 신청할 수 있습니다.";
+      let detail = "이 방을 바로 예약할 수 있습니다.";
+      let actionType = "reserve";
+      let actionLabel = "이 방 예약";
 
       if (reservation) {
         status = "reserved";
         title = reservation.communityName;
         detail = `${reservation.requesterName} · ${reservation.attendees}명`;
+        actionType = "waitlist";
+        actionLabel = "이 방 대기";
       } else if (state.mode === ROOM_MODES.FIXED) {
         status = "fixed";
         title = state.label;
         detail = "고정 사용으로 운영됩니다.";
+        actionType = "disabled";
+        actionLabel = "선택 불가";
       } else if (state.mode === ROOM_MODES.CLOSED) {
         status = "closed";
-        title = "예약 미운영";
+        title = "운영 안 함";
         detail = "이 타임에는 이 방을 열지 않습니다.";
+        actionType = "disabled";
+        actionLabel = "선택 불가";
+      }
+
+      if (waitlistCount > 0) {
+        detail = `${detail} · 대기 ${waitlistCount}팀`;
       }
 
       return {
@@ -317,19 +421,23 @@ function buildSchedule(dateIso) {
         status,
         mode: state.mode,
         label: state.label,
-        selectable: status === "available",
+        interactive: actionType !== "disabled",
+        actionType,
+        actionLabel,
         title,
         detail,
         reservation,
+        waitlistItems,
+        waitlistCount,
       };
     });
     const reservableRoomCount = rooms.filter((room) => room.mode === ROOM_MODES.AVAILABLE).length;
     const fixedRoomCount = rooms.filter((room) => room.mode === ROOM_MODES.FIXED).length;
     const closedRoomCount = rooms.filter((room) => room.mode === ROOM_MODES.CLOSED).length;
     const confirmedCount = rooms.filter((room) => room.status === "reserved").length;
-    const remainingRooms = rooms.filter((room) => room.status === "available").length;
-    const waitlistItems = waitlistMap.get(slot.id) || [];
-    const waitlistCount = waitlistItems.length;
+    const remainingRooms = rooms.filter((room) => room.actionType === "reserve").length;
+    const waitlistCount =
+      rooms.reduce((sum, room) => sum + room.waitlistCount, 0) + legacyWaitlistItems.length;
     const detailParts = [];
 
     if (reservableRoomCount > 0) {
@@ -364,8 +472,8 @@ function buildSchedule(dateIso) {
       actionLabel = "예약 불가";
     } else if (remainingRooms === 0) {
       status = "full";
-      availabilityLabel = "현재 만석";
-      actionLabel = "대기 신청";
+      availabilityLabel = "즉시 예약 마감";
+      actionLabel = "대기 가능";
     }
 
     return {
@@ -381,9 +489,8 @@ function buildSchedule(dateIso) {
       detailLabel: detailParts.join(" · ") || "운영 정보가 없습니다.",
       actionLabel,
       bookable: reservableRoomCount > 0,
-      canWaitlist: reservableRoomCount > 0 && remainingRooms === 0,
       rooms,
-      waitlistItems,
+      legacyWaitlistItems,
     };
   });
 
@@ -408,16 +515,25 @@ function buildSchedule(dateIso) {
   return {
     rooms,
     slotDetails,
+    activeReservations,
+    confirmedReservations,
+    waitlistedReservations,
     waitlists: slotDetails.map((slot) => ({
       slot: {
         id: slot.id,
         label: slot.label,
         timeRange: slot.timeRange,
       },
-      items: slot.waitlistItems,
+      rooms: slot.rooms
+        .filter((room) => room.waitlistCount > 0)
+        .map((room) => ({
+          roomId: room.roomId,
+          roomName: room.roomName,
+          items: room.waitlistItems,
+        })),
+      legacyItems: slot.legacyWaitlistItems,
     })),
-    activeReservations,
-    hasWaitlist: slotDetails.some((slot) => slot.waitlistCount > 0),
+    hasWaitlist: totalWaitlisted > 0,
     summary: {
       totalCapacity,
       totalConfirmed,
@@ -433,19 +549,20 @@ function buildSchedule(dateIso) {
 function sanitizeReservationInput(input, now = getNow()) {
   const reservationDate = parseSundayDate(input.reservationDate);
   const slotId = Number.parseInt(input.slotId, 10);
-  const roomId = String(input.roomId || "").trim()
-    ? Number.parseInt(input.roomId, 10)
-    : null;
+  const roomId = Number.parseInt(input.roomId, 10);
   const attendees = Number.parseInt(input.attendees, 10);
   const communityName = String(input.communityName || "").trim();
   const requesterName = String(input.requesterName || "").trim();
   const contact = String(input.contact || "").trim();
   const note = String(input.note || "").trim();
-  const joinWaitlist = String(input.joinWaitlist || "") === "1";
   const slot = slotById.get(slotId);
 
   if (!slot) {
     throw new Error("예약 타임을 선택해 주세요.");
+  }
+
+  if (!Number.isInteger(roomId) || !roomById.has(roomId)) {
+    throw new Error("방을 선택해 주세요.");
   }
 
   if (!communityName) {
@@ -460,10 +577,6 @@ function sanitizeReservationInput(input, now = getNow()) {
     throw new Error(`최소 ${MIN_ATTENDEES}명 이상만 예약할 수 있습니다.`);
   }
 
-  if (roomId !== null && !roomById.has(roomId)) {
-    throw new Error("선택한 방을 다시 확인해 주세요.");
-  }
-
   assertBookableDate(reservationDate, now);
 
   return {
@@ -475,60 +588,7 @@ function sanitizeReservationInput(input, now = getNow()) {
     requesterName,
     contact,
     note,
-    joinWaitlist,
   };
-}
-
-function promoteWaitlistForSlot(reservationDate, slotId, updatedAt) {
-  const promotions = [];
-
-  while (true) {
-    const availability = getSlotAvailability(reservationDate, slotId);
-
-    if (!availability.availableRoomIds.length) {
-      break;
-    }
-
-    const nextWaitlisted = db
-      .prepare(
-        `
-          SELECT *
-          FROM reservations
-          WHERE reservation_date = ?
-            AND slot_id = ?
-            AND status = 'waitlisted'
-          ORDER BY created_at ASC, id ASC
-          LIMIT 1
-        `,
-      )
-      .get(reservationDate, slotId);
-
-    if (!nextWaitlisted) {
-      break;
-    }
-
-    const assignedRoomId = availability.availableRoomIds[0];
-
-    db.prepare(
-      `
-        UPDATE reservations
-        SET status = 'confirmed',
-            room_id = ?,
-            updated_at = ?
-        WHERE id = ?
-      `,
-    ).run(assignedRoomId, updatedAt, nextWaitlisted.id);
-
-    promotions.push(
-      decorateReservation({
-        ...nextWaitlisted,
-        status: "confirmed",
-        room_id: assignedRoomId,
-      }),
-    );
-  }
-
-  return promotions;
 }
 
 const createReservationTx = db.transaction((input) => {
@@ -555,41 +615,15 @@ const createReservationTx = db.transaction((input) => {
   }
 
   const availability = getSlotAvailability(reservationDate, sanitized.slot.id);
+  const selectedRoomState = availability.roomStates.find((room) => room.roomId === sanitized.roomId);
 
-  if (!availability.reservableRoomIds.length) {
-    throw new Error("선택한 타임은 현재 예약을 받지 않는 타임입니다.");
+  if (!selectedRoomState || selectedRoomState.mode !== ROOM_MODES.AVAILABLE) {
+    throw new Error("선택한 방은 예약 가능한 상태가 아닙니다.");
   }
 
-  let status = "waitlisted";
-  let assignedRoom = null;
-
-  if (sanitized.joinWaitlist) {
-    if (availability.availableRoomIds.length > 0) {
-      throw new Error("남은 방이 있습니다. 원하는 방을 먼저 선택해 주세요.");
-    }
-  } else {
-    if (!sanitized.roomId) {
-      throw new Error("방을 선택해 주세요.");
-    }
-
-    const selectedState = availability.stateMap.get(makeCellKey(sanitized.roomId, sanitized.slot.id));
-
-    if (!selectedState || selectedState.mode !== ROOM_MODES.AVAILABLE) {
-      throw new Error("선택한 방은 예약 가능한 방이 아닙니다.");
-    }
-
-    if (!availability.availableRoomIds.includes(sanitized.roomId)) {
-      if (availability.availableRoomIds.length === 0) {
-        throw new Error("선택한 타임은 모두 마감되었습니다. 대기 신청으로 진행해 주세요.");
-      }
-
-      throw new Error("선택한 방은 방금 마감되었습니다. 다른 방을 선택해 주세요.");
-    }
-
-    status = "confirmed";
-    assignedRoom = roomById.get(sanitized.roomId);
-  }
-
+  const isImmediatelyAvailable = !selectedRoomState.isOccupied;
+  const selectedRoom = roomById.get(sanitized.roomId);
+  const status = isImmediatelyAvailable ? "confirmed" : "waitlisted";
   const timestamp = now.toISO();
   const result = db
     .prepare(
@@ -613,7 +647,7 @@ const createReservationTx = db.transaction((input) => {
     .run(
       reservationDate,
       sanitized.slot.id,
-      assignedRoom ? assignedRoom.id : null,
+      sanitized.roomId,
       sanitized.communityName,
       sanitized.requesterName,
       sanitized.attendees,
@@ -633,18 +667,19 @@ const createReservationTx = db.transaction((input) => {
               FROM reservations
               WHERE reservation_date = ?
                 AND slot_id = ?
+                AND room_id = ?
                 AND status = 'waitlisted'
             `,
           )
           .pluck()
-          .get(reservationDate, sanitized.slot.id)
+          .get(reservationDate, sanitized.slot.id, sanitized.roomId)
       : null;
 
   return {
     id: result.lastInsertRowid,
     reservationDate,
     slot: sanitized.slot,
-    room: assignedRoom,
+    room: selectedRoom,
     status,
     waitlistPosition,
   };
@@ -678,15 +713,20 @@ const cancelReservationTx = db.transaction((reservationId) => {
     reservationId,
   );
 
-  const promotions =
-    activeReservation.status === "confirmed"
-      ? promoteWaitlistForSlot(activeReservation.reservation_date, activeReservation.slot_id, now)
-      : [];
+  const promoted =
+    activeReservation.status === "confirmed" && activeReservation.room_id
+      ? promoteWaitlistForRoom(
+          activeReservation.reservation_date,
+          activeReservation.slot_id,
+          activeReservation.room_id,
+          now,
+        )
+      : null;
 
   return {
     cancelled: decorateReservation(activeReservation),
-    promoted: promotions[0] || null,
-    promotedCount: promotions.length,
+    promoted,
+    promotedCount: promoted ? 1 : 0,
   };
 });
 
@@ -755,15 +795,41 @@ const updateRoomSlotSettingsTx = db.transaction((input) => {
       `,
     )
     .all(sanitized.reservationDate, sanitized.slot.id);
+  const waitlistedReservations = db
+    .prepare(
+      `
+        SELECT room_id, community_name
+        FROM reservations
+        WHERE reservation_date = ?
+          AND slot_id = ?
+          AND status = 'waitlisted'
+          AND room_id IS NOT NULL
+      `,
+    )
+    .all(sanitized.reservationDate, sanitized.slot.id);
   const confirmedRoomMap = new Map(
     confirmedReservations.map((reservation) => [reservation.room_id, reservation]),
   );
+  const waitlistedRoomMap = new Map(
+    waitlistedReservations.map((reservation) => [reservation.room_id, reservation]),
+  );
 
   sanitized.settings.forEach((setting) => {
-    if (setting.mode !== ROOM_MODES.AVAILABLE && confirmedRoomMap.has(setting.roomId)) {
+    if (setting.mode === ROOM_MODES.AVAILABLE) {
+      return;
+    }
+
+    if (confirmedRoomMap.has(setting.roomId)) {
       const reservation = confirmedRoomMap.get(setting.roomId);
       throw new Error(
         `${setting.room.name}에는 ${reservation.community_name} 예약이 확정되어 있어 상태를 바꿀 수 없습니다.`,
+      );
+    }
+
+    if (waitlistedRoomMap.has(setting.roomId)) {
+      const reservation = waitlistedRoomMap.get(setting.roomId);
+      throw new Error(
+        `${setting.room.name}에는 ${reservation.community_name} 대기가 있어 상태를 바꿀 수 없습니다.`,
       );
     }
   });
@@ -812,7 +878,7 @@ const updateRoomSlotSettingsTx = db.transaction((input) => {
     );
   });
 
-  const promotions = promoteWaitlistForSlot(sanitized.reservationDate, sanitized.slot.id, now);
+  const promotions = promoteWaitlistsForSlot(sanitized.reservationDate, sanitized.slot.id, now);
 
   return {
     reservationDate: sanitized.reservationDate,
@@ -830,9 +896,7 @@ function buildDashboard(dateInput) {
   const selectedDate = normalizeDate(dateInput, now);
   const schedule = buildSchedule(selectedDate.toISODate());
   const defaultSlot =
-    schedule.slotDetails.find((slot) => slot.remainingRooms > 0) ||
-    schedule.slotDetails.find((slot) => slot.bookable) ||
-    schedule.slotDetails[0];
+    schedule.slotDetails.find((slot) => slot.bookable) || schedule.slotDetails[0];
 
   return {
     currentTimeLabel: now.toFormat("M월 d일 (ccc) HH:mm"),

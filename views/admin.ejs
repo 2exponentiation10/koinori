@@ -11,17 +11,17 @@
     <main class="page-shell">
       <header class="app-header admin-header">
         <div class="brand-panel">
-          <img src="/koinori-logo.svg" alt="KOINORI 로고" class="brand-logo" />
+          <span class="brand-wordmark admin-wordmark">KOINORI</span>
           <div class="brand-copy">
-            <strong>KOINORI OPS</strong>
-            <small>예약 운영 화면</small>
+            <strong>운영 화면</strong>
+            <small><%= selectedDateLabel %> 운영 기준</small>
           </div>
         </div>
 
         <article class="hero-card admin-hero-card">
           <div class="hero-row">
             <div>
-              <p class="eyebrow">운영 날짜</p>
+              <p class="eyebrow">OPS DASHBOARD</p>
               <h1><%= selectedDateLabel %></h1>
             </div>
             <% if (adminAuthEnabled) { %>
@@ -30,8 +30,10 @@
               </form>
             <% } %>
           </div>
-          <p class="hero-text">요약, 방 설정, 예약 취소, 대기 명단을 페이지별로 나누어 손쉽게 운영할 수 있습니다.</p>
-          <div class="hero-meta">
+
+          <p class="hero-text">예약자 명단, 방 상태 설정, 방별 대기 명단을 모바일에서 짧은 화면으로 운영할 수 있게 정리했습니다.</p>
+
+          <div class="hero-meta compact-meta">
             <div>
               <span>현재 시각</span>
               <strong><%= currentTimeLabel %></strong>
@@ -41,6 +43,7 @@
               <strong><%= bookingOpenAtLabel %></strong>
             </div>
           </div>
+
           <div class="status-banner status-<%= bookingStatus.kind %>"><%= bookingStatus.message %></div>
         </article>
       </header>
@@ -49,20 +52,20 @@
         <div class="flash flash-<%= flashLevel %>"><%= flashMessage %></div>
       <% } %>
 
-      <section class="page-card">
-        <div class="section-heading">
+      <section class="page-card compact-card">
+        <div class="section-heading compact-heading">
           <div>
             <p class="eyebrow">DATE</p>
-            <h2>운영 날짜 바꾸기</h2>
+            <h2>운영 날짜</h2>
           </div>
         </div>
 
-        <form class="inline-form" method="get" action="/admin">
+        <form class="inline-form compact-form" method="get" action="/admin">
           <label class="field">
             <span>운영 날짜</span>
             <input type="date" name="date" value="<%= selectedDate %>" required />
           </label>
-          <button type="submit" class="primary-button">날짜 이동</button>
+          <button type="submit" class="primary-button">이동</button>
         </form>
 
         <div class="choice-grid choice-grid-dates">
@@ -72,7 +75,7 @@
               class="choice-card <%= option.selected ? 'choice-card-active' : '' %>"
             >
               <strong><%= option.label %></strong>
-              <span>오픈: <%= option.openAtLabel %></span>
+              <span>오픈 <%= option.openAtLabel %></span>
             </a>
           <% }) %>
         </div>
@@ -81,19 +84,19 @@
       <nav class="page-tabs" aria-label="관리자 페이지">
         <button type="button" class="page-tab is-active" data-go-page="summary">1. 요약</button>
         <button type="button" class="page-tab" data-go-page="settings">2. 방 설정</button>
-        <button type="button" class="page-tab" data-go-page="control">3. 예약 관리</button>
-        <button type="button" class="page-tab" data-go-page="waitlist">4. 대기 명단</button>
+        <button type="button" class="page-tab" data-go-page="control">3. 예약자</button>
+        <button type="button" class="page-tab" data-go-page="waitlist">4. 대기자</button>
       </nav>
 
-      <section class="page-card is-active" data-page="summary">
-        <div class="section-heading">
+      <section class="page-card is-active compact-card" data-page="summary">
+        <div class="section-heading compact-heading">
           <div>
             <p class="eyebrow">SUMMARY</p>
-            <h2>오늘 운영 요약</h2>
+            <h2>운영 요약</h2>
           </div>
         </div>
 
-        <div class="summary-strip">
+        <div class="summary-strip compact-summary">
           <article class="summary-card">
             <span>확정 예약</span>
             <strong><%= summary.totalConfirmed %></strong>
@@ -126,13 +129,13 @@
         </div>
       </section>
 
-      <section class="page-card" data-page="settings">
-        <div class="section-heading">
+      <section class="page-card compact-card" data-page="settings">
+        <div class="section-heading compact-heading">
           <div>
             <p class="eyebrow">SETTINGS</p>
             <h2>방 상태 설정</h2>
           </div>
-          <p class="section-guide">타임별로 예약 가능, 고정 사용, 운영 안 함 상태를 직접 바꿀 수 있습니다.</p>
+          <p class="section-guide">예약 가능, 고정 사용, 운영 안 함을 타임별로 조정할 수 있습니다.</p>
         </div>
 
         <div class="slot-chip-row">
@@ -153,7 +156,7 @@
           >
             <input type="hidden" name="date" value="<%= selectedDate %>" />
 
-            <div class="selection-banner">
+            <div class="selection-banner compact-banner">
               <strong><%= slot.label %> <%= slot.timeRange %></strong>
               <span><%= slot.detailLabel %></span>
             </div>
@@ -172,14 +175,14 @@
 
             <div class="settings-room-list">
               <% slot.rooms.forEach((room) => { %>
-                <% const locked = room.status === 'reserved'; %>
+                <% const locked = room.status === 'reserved' || room.waitlistCount > 0; %>
                 <article class="settings-room-card">
                   <div class="settings-room-head">
                     <strong><%= room.roomName %></strong>
                     <span><%= room.title %> · <%= room.detail %></span>
                   </div>
 
-                  <div class="mode-group" data-mode-group="<%= slot.id %>-<%= room.roomId %>">
+                  <div class="mode-group">
                     <label class="mode-pill <%= room.mode === 'available' ? 'is-selected' : '' %>">
                       <input
                         type="radio"
@@ -224,35 +227,35 @@
                   </label>
 
                   <% if (locked) { %>
-                    <p class="locked-note">이미 확정 예약이 있어 지금은 고정 사용이나 운영 안 함으로 바꿀 수 없습니다.</p>
+                    <p class="locked-note">확정 예약이나 대기 팀이 있어서 지금은 예약 가능 상태를 유지해야 합니다.</p>
                   <% } %>
                 </article>
               <% }) %>
             </div>
 
-            <div class="page-actions">
+            <div class="page-actions compact-actions">
               <button type="submit" class="primary-button"><%= slot.label %> 설정 저장</button>
             </div>
           </form>
         <% }) %>
       </section>
 
-      <section class="page-card" data-page="control">
-        <div class="section-heading">
+      <section class="page-card compact-card" data-page="control">
+        <div class="section-heading compact-heading">
           <div>
-            <p class="eyebrow">CONTROL</p>
-            <h2>예약 관리</h2>
+            <p class="eyebrow">RESERVATIONS</p>
+            <h2>예약자 명단</h2>
           </div>
         </div>
 
-        <% if (!schedule.activeReservations.length) { %>
-          <div class="empty-state">현재 활성 예약이 없습니다.</div>
+        <% if (!schedule.confirmedReservations.length) { %>
+          <div class="empty-state">현재 확정 예약이 없습니다.</div>
         <% } else { %>
           <div class="management-list">
-            <% schedule.activeReservations.forEach((reservation) => { %>
+            <% schedule.confirmedReservations.forEach((reservation) => { %>
               <article class="management-card">
                 <div class="management-header">
-                  <span class="table-tag"><%= reservation.status === 'confirmed' ? '확정' : '대기' %></span>
+                  <span class="table-tag">확정</span>
                   <strong><%= reservation.slot.label %> · <%= reservation.roomName %></strong>
                 </div>
 
@@ -282,11 +285,11 @@
         <% } %>
       </section>
 
-      <section class="page-card" data-page="waitlist">
-        <div class="section-heading">
+      <section class="page-card compact-card" data-page="waitlist">
+        <div class="section-heading compact-heading">
           <div>
             <p class="eyebrow">WAITLIST</p>
-            <h2>대기 명단</h2>
+            <h2>방별 대기 명단</h2>
           </div>
         </div>
 
@@ -295,18 +298,33 @@
         <% } else { %>
           <div class="waitlist-grid">
             <% schedule.waitlists.forEach((waitlist) => { %>
-              <article class="waitlist-card">
-                <h3><%= waitlist.slot.label %> <span><%= waitlist.slot.timeRange %></span></h3>
-                <% if (!waitlist.items.length) { %>
-                  <p class="waitlist-empty">대기 없음</p>
-                <% } else { %>
-                  <ol class="waitlist-list">
-                    <% waitlist.items.forEach((reservation, index) => { %>
-                      <li><%= index + 1 %>. <%= reservation.communityName %> / <%= reservation.requesterName %> / <%= reservation.attendees %>명</li>
-                    <% }) %>
-                  </ol>
-                <% } %>
-              </article>
+              <% if (waitlist.rooms.length || waitlist.legacyItems.length) { %>
+                <article class="waitlist-card">
+                  <h3><%= waitlist.slot.label %> <span><%= waitlist.slot.timeRange %></span></h3>
+
+                  <% waitlist.rooms.forEach((room) => { %>
+                    <div class="room-waitlist-block">
+                      <strong><%= room.roomName %></strong>
+                      <ol class="waitlist-list">
+                        <% room.items.forEach((reservation, index) => { %>
+                          <li><%= index + 1 %>. <%= reservation.communityName %> / <%= reservation.requesterName %> / <%= reservation.attendees %>명</li>
+                        <% }) %>
+                      </ol>
+                    </div>
+                  <% }) %>
+
+                  <% if (waitlist.legacyItems.length) { %>
+                    <div class="room-waitlist-block">
+                      <strong>방 미지정 대기</strong>
+                      <ol class="waitlist-list">
+                        <% waitlist.legacyItems.forEach((reservation, index) => { %>
+                          <li><%= index + 1 %>. <%= reservation.communityName %> / <%= reservation.requesterName %> / <%= reservation.attendees %>명</li>
+                        <% }) %>
+                      </ol>
+                    </div>
+                  <% } %>
+                </article>
+              <% } %>
             <% }) %>
           </div>
         <% } %>

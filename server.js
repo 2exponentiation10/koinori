@@ -128,7 +128,6 @@ function normalizeFormValues(values = {}, fallbackDate, fallbackSlotId) {
     attendees: values.attendees || MIN_ATTENDEES,
     slotId: Number(values.slotId || fallbackSlotId || 1),
     roomId: values.roomId ? Number(values.roomId) : null,
-    joinWaitlist: values.joinWaitlist === "1" ? "1" : "",
     contact: values.contact || "",
     note: values.note || "",
   };
@@ -174,7 +173,7 @@ function readFlash(req) {
 function renderPublicPage(req, res, options = {}) {
   const dashboard = buildDashboard(options.date || req.query.date);
   const flash = readFlash(req);
-  const initialPage = normalizePage(options.page || req.query.page, ["date", "slot", "room", "form", "board"], "date");
+  const initialPage = normalizePage(options.page || req.query.page, ["slot", "room", "form", "board"], "slot");
   const formValues = normalizeFormValues(
     options.formValues,
     dashboard.selectedDate,
@@ -188,14 +187,16 @@ function renderPublicPage(req, res, options = {}) {
     detailLabel: slot.detailLabel,
     availabilityLabel: slot.availabilityLabel,
     bookable: slot.bookable,
-    canWaitlist: slot.canWaitlist,
     rooms: slot.rooms.map((room) => ({
       roomId: room.roomId,
       roomName: room.roomName,
       status: room.status,
-      selectable: room.selectable,
+      interactive: room.interactive,
+      actionType: room.actionType,
+      actionLabel: room.actionLabel,
       title: room.title,
       detail: room.detail,
+      waitlistCount: room.waitlistCount,
     })),
   }));
 
@@ -281,7 +282,7 @@ app.post("/reservations", (req, res) => {
     const message =
       result.status === "confirmed"
         ? `${result.slot.label} ${result.room.name} 예약이 완료되었습니다.`
-        : `${result.slot.label}은 만석입니다. 대기 ${result.waitlistPosition}번으로 등록되었습니다.`;
+        : `${result.slot.label} ${result.room.name} 대기 ${result.waitlistPosition}번으로 등록되었습니다.`;
 
     redirectWithFlash(
       res,

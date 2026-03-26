@@ -24,11 +24,9 @@ cleanup();
 try {
   let dashboard = buildDashboard(TEST_DATE);
   let slotTwo = dashboard.slotDetails.find((slot) => slot.id === 2);
-  let slotFive = dashboard.slotDetails.find((slot) => slot.id === 5);
 
   expect(dashboard.schedule.rooms.length === 9, "Expected 9 rooms in the schedule.");
   expect(slotTwo && slotTwo.remainingRooms === 9, "Expected 2타임 to start with 9 open rooms.");
-  expect(slotFive && slotFive.bookable === false, "Expected 5타임 to default to fixed use.");
 
   updateRoomSlotSettings({
     reservationDate: TEST_DATE,
@@ -51,47 +49,49 @@ try {
 
   expect(slotTwo && slotTwo.reservableRoomCount === 7, "Expected 2타임 to expose 7 reservable rooms.");
   expect(
-    slotTwo && slotTwo.rooms.find((room) => room.roomId === 1 && room.status === "fixed"),
-    "Expected room 1 in 2타임 to become fixed.",
-  );
-  expect(
-    slotTwo && slotTwo.rooms.find((room) => room.roomId === 2 && room.status === "closed"),
-    "Expected room 2 in 2타임 to become closed.",
+    slotTwo && slotTwo.rooms.find((room) => room.roomId === 3 && room.actionType === "reserve"),
+    "Expected room 3 in 2타임 to be reservable.",
   );
 
-  const confirmedReservations = [3, 4, 5, 6, 7, 8, 9].map((roomId) =>
-    createReservation({
-      reservationDate: TEST_DATE,
-      slotId: 2,
-      roomId,
-      communityName: `공동체-${roomId}`,
-      requesterName: `신청자-${roomId}`,
-      attendees: 6,
-      contact: "010-0000-0000",
-      note: "",
-      joinWaitlist: "",
-    }),
-  );
-
-  expect(
-    confirmedReservations.every((reservation) => reservation.status === "confirmed"),
-    "Expected all selected rooms to confirm immediately.",
-  );
-
-  const waitlisted = createReservation({
+  const firstConfirmed = createReservation({
     reservationDate: TEST_DATE,
     slotId: 2,
-    roomId: "",
+    roomId: 3,
+    communityName: "공동체-3",
+    requesterName: "신청자-3",
+    attendees: 6,
+    contact: "010-0000-0000",
+    note: "",
+  });
+
+  expect(firstConfirmed.status === "confirmed", "Expected room 3 to confirm immediately.");
+
+  const roomSpecificWaitlist = createReservation({
+    reservationDate: TEST_DATE,
+    slotId: 2,
+    roomId: 3,
     communityName: "대기공동체",
     requesterName: "대기신청",
     attendees: 8,
     contact: "",
     note: "",
-    joinWaitlist: "1",
   });
 
-  expect(waitlisted.status === "waitlisted", "Expected a waitlist registration when 2타임 is full.");
-  expect(waitlisted.waitlistPosition === 1, "Expected first waitlist position to be 1.");
+  expect(
+    roomSpecificWaitlist.status === "waitlisted",
+    "Expected a waitlist registration for an already reserved room.",
+  );
+  expect(roomSpecificWaitlist.waitlistPosition === 1, "Expected first room waitlist position to be 1.");
+
+  dashboard = buildDashboard(TEST_DATE);
+  slotTwo = dashboard.slotDetails.find((slot) => slot.id === 2);
+  const roomThree = slotTwo && slotTwo.rooms.find((room) => room.roomId === 3);
+
+  expect(roomThree && roomThree.waitlistCount === 1, "Expected room 3 waitlist count to be exposed.");
+  expect(
+    dashboard.schedule.waitlistedReservations.length === 1,
+    "Expected dashboard to expose the waitlisted reservation list.",
+  );
 
   const reservationIdToCancel = db
     .prepare(
@@ -109,10 +109,10 @@ try {
     .get(TEST_DATE);
   const cancellation = cancelReservation(Number(reservationIdToCancel));
 
-  expect(Boolean(cancellation && cancellation.promoted), "Expected waitlist promotion after cancellation.");
+  expect(Boolean(cancellation && cancellation.promoted), "Expected room-specific waitlist promotion.");
   expect(
     cancellation.promoted && cancellation.promoted.communityName === "대기공동체",
-    "Expected the first waitlisted team to be promoted.",
+    "Expected the room-specific waitlist to be promoted after cancellation.",
   );
 
   console.log("Verification passed.");

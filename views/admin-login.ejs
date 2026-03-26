@@ -9,12 +9,14 @@
   <body class="mobile-app login-app">
     <main class="page-shell login-shell">
       <section class="login-card">
-        <img src="/koinori-logo.svg" alt="KOINORI 로고" class="modal-logo" />
-        <p class="eyebrow">ADMIN ACCESS</p>
+        <div class="modal-brand">
+          <span class="brand-wordmark modal-wordmark">KOINORI</span>
+          <p class="eyebrow">ADMIN ACCESS</p>
+        </div>
         <h1>운영 화면 로그인</h1>
         <p class="hero-text">
-          로고를 10번 터치하면 공개 화면에서도 이 로그인 창을 열 수 있습니다. 비밀번호를 입력하면
-          관리자 화면으로 이동합니다.
+          공개 화면에서 워드마크를 여러 번 터치하면 이 로그인 창을 열 수 있습니다. 운영 비밀번호를
+          입력하면 관리자 화면으로 이동합니다.
         </p>
 
         <% if (flashMessage) { %>
@@ -31,7 +33,6 @@
               name="adminKey"
               inputmode="numeric"
               autocomplete="current-password"
-              placeholder="0191"
               required
             />
           </label>
