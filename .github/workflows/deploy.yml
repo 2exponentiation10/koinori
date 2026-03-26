@@ -75,4 +75,13 @@ jobs:
         shell: bash
         run: |
           APP_PORT="${KOINORI_APP_PORT:-7085}"
-          curl -fsS "http://127.0.0.1:${APP_PORT}/health"
+          for attempt in {1..20}; do
+            if curl -fsS "http://127.0.0.1:${APP_PORT}/health"; then
+              exit 0
+            fi
+
+            sleep 2
+          done
+
+          echo "::error::koinori health check did not succeed in time"
+          exit 1
