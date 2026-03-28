@@ -45,7 +45,7 @@ function getRoomMetrics(room) {
 
   if (openCount > 0) {
     state = "open";
-    badge = `예약 가능 ${openCount}타임`;
+    badge = "예약 가능";
     helperText = "";
   } else if (waitCount > 0) {
     state = "wait";
@@ -265,20 +265,8 @@ function getRecentActionTitle(recentAction) {
   return "";
 }
 
-function renderSlotPills(labels, ariaLabel) {
-  if (!labels.length) {
-    return <span className="room-pick-slot-empty">없음</span>;
-  }
-
-  return (
-    <div className="room-pick-slot-list" aria-label={ariaLabel}>
-      {labels.map((label) => (
-        <span key={label} className="room-pick-slot-pill">
-          {label}
-        </span>
-      ))}
-    </div>
-  );
+function formatSlotSummary(labels) {
+  return labels.join(" · ");
 }
 
 function applyServerState(
@@ -730,20 +718,24 @@ function App({ initialState }) {
       >
         <span className="room-pick-head">
           <strong>{room.name}</strong>
-          <small>{metrics.badge}</small>
+          <small className={`room-pick-badge room-pick-badge-${metrics.state}`}>{metrics.badge}</small>
         </span>
-        <span className="room-pick-stats">
-          <span className="room-pick-stat">
-            <span>바로 예약</span>
-            <strong>{metrics.openCount}</strong>
-            {renderSlotPills(metrics.openSlotLabels, "바로 예약 가능한 타임")}
+        {metrics.openCount > 0 || metrics.waitCount > 0 ? (
+          <span className="room-pick-summary" aria-label={`${room.name} 예약 요약`}>
+            {metrics.openCount > 0 ? (
+              <span className="room-pick-line room-pick-line-open">
+                <span className="room-pick-line-label">예약 {metrics.openCount}타임</span>
+                <span className="room-pick-line-slots">{formatSlotSummary(metrics.openSlotLabels)}</span>
+              </span>
+            ) : null}
+            {metrics.waitCount > 0 ? (
+              <span className="room-pick-line room-pick-line-wait">
+                <span className="room-pick-line-label">대기 {metrics.waitCount}타임</span>
+                <span className="room-pick-line-slots">{formatSlotSummary(metrics.waitSlotLabels)}</span>
+              </span>
+            ) : null}
           </span>
-          <span className="room-pick-stat">
-            <span>대기 가능</span>
-            <strong>{metrics.waitCount}</strong>
-            {renderSlotPills(metrics.waitSlotLabels, "대기 가능한 타임")}
-          </span>
-        </span>
+        ) : null}
         {metrics.helperText ? <span className="room-pick-detail">{metrics.helperText}</span> : null}
       </button>
     );

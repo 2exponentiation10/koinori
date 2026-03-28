@@ -663,12 +663,15 @@ button {
 
 .room-pick-card {
   display: grid;
-  gap: 8px;
+  gap: 10px;
 }
 
 .room-pick-head {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .room-pick-head strong,
@@ -687,7 +690,7 @@ button {
 }
 
 .room-pick-head small {
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   font-weight: 800;
 }
 
@@ -696,57 +699,74 @@ button {
   line-height: 1.55;
 }
 
-.room-pick-stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+.room-pick-badge {
+  min-height: 28px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  border: 1px solid transparent;
 }
 
-.room-pick-stat {
-  padding: 10px 11px;
-  border-radius: var(--radius-md);
-  border: 1px solid rgba(33, 30, 26, 0.08);
-  background: rgba(255, 255, 255, 0.86);
+.room-pick-badge-open {
+  background: rgba(23, 63, 54, 0.09);
+  border-color: rgba(23, 63, 54, 0.12);
+  color: var(--primary);
+}
+
+.room-pick-badge-wait {
+  background: rgba(140, 106, 32, 0.1);
+  border-color: rgba(140, 106, 32, 0.12);
+  color: var(--warning);
+}
+
+.room-pick-badge-fixed {
+  background: rgba(147, 74, 49, 0.09);
+  border-color: rgba(147, 74, 49, 0.12);
+  color: var(--accent);
+}
+
+.room-pick-badge-closed {
+  background: rgba(84, 77, 68, 0.08);
+  border-color: rgba(84, 77, 68, 0.12);
+  color: var(--muted);
+}
+
+.room-pick-summary {
   display: grid;
   gap: 6px;
 }
 
-.room-pick-stat span {
+.room-pick-line {
+  display: grid;
+  gap: 3px;
+  padding: 10px 11px;
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(33, 30, 26, 0.07);
+}
+
+.room-pick-line-open {
+  background: rgba(23, 63, 54, 0.04);
+}
+
+.room-pick-line-wait {
+  background: rgba(140, 106, 32, 0.05);
+}
+
+.room-pick-line-label {
   font-size: 0.74rem;
-  color: var(--muted);
-}
-
-.room-pick-stat strong {
-  font-size: 1.1rem;
-  line-height: 1;
-}
-
-.room-pick-slot-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.room-pick-slot-pill,
-.room-pick-slot-empty {
-  min-height: 22px;
-  padding: 4px 7px;
-  border-radius: 999px;
-  font-size: 0.68rem;
   font-weight: 800;
-  line-height: 1;
-  display: inline-flex;
-  align-items: center;
-}
-
-.room-pick-slot-pill {
-  background: rgba(33, 73, 63, 0.1);
-  color: var(--primary);
-}
-
-.room-pick-slot-empty {
-  background: rgba(112, 110, 105, 0.12);
   color: var(--muted);
+}
+
+.room-pick-line-slots {
+  font-size: 0.88rem;
+  line-height: 1.35;
+  color: var(--text);
+  font-weight: 700;
+  word-break: keep-all;
 }
 
 .room-pick-card.is-selected {
@@ -1300,7 +1320,6 @@ button {
   .selection-summary,
   .summary-strip,
   .guide-steps,
-  .room-pick-stats,
   .mode-group,
   .preset-row {
     grid-template-columns: 1fr;
