@@ -1289,7 +1289,7 @@ function App({ initialState }) {
                   inputMode="numeric"
                   value={cancelValues.contactLastFour}
                   onChange={(event) => changeCancelValue("contactLastFour", event.target.value)}
-                  placeholder="예: 0191"
+                  placeholder="뒤 4자리"
                   required
                 />
               </label>

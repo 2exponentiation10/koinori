@@ -10,6 +10,7 @@ const {
 
 const TEST_DATE = "2026-03-29";
 const FUTURE_DATE = "2026-04-05";
+const NEXT_FUTURE_DATE = "2026-04-12";
 
 function expect(condition, message) {
   if (!condition) {
@@ -22,6 +23,8 @@ function cleanup() {
   db.prepare("DELETE FROM room_slot_settings WHERE reservation_date = ?").run(TEST_DATE);
   db.prepare("DELETE FROM reservations WHERE reservation_date = ?").run(FUTURE_DATE);
   db.prepare("DELETE FROM room_slot_settings WHERE reservation_date = ?").run(FUTURE_DATE);
+  db.prepare("DELETE FROM reservations WHERE reservation_date = ?").run(NEXT_FUTURE_DATE);
+  db.prepare("DELETE FROM room_slot_settings WHERE reservation_date = ?").run(NEXT_FUTURE_DATE);
 }
 
 cleanup();
@@ -56,6 +59,42 @@ try {
   expect(
     slotTwo && slotTwo.rooms.find((room) => room.roomId === 3 && room.actionType === "reserve"),
     "Expected room 3 in 2타임 to be reservable.",
+  );
+
+  let futureDashboard = buildDashboard(FUTURE_DATE);
+  let futureSlotTwo = futureDashboard.slotDetails.find((slot) => slot.id === 2);
+
+  expect(
+    futureSlotTwo && futureSlotTwo.rooms.find((room) => room.roomId === 1 && room.mode === "fixed"),
+    "Expected fixed room settings to carry forward to the next Sunday.",
+  );
+  expect(
+    futureSlotTwo && futureSlotTwo.rooms.find((room) => room.roomId === 2 && room.mode === "closed"),
+    "Expected closed room settings to carry forward to the next Sunday.",
+  );
+
+  updateRoomSlotSettings({
+    reservationDate: FUTURE_DATE,
+    slotId: 2,
+    settings: Array.from({ length: 9 }, (_, index) => ({
+      roomId: index + 1,
+      mode: "available",
+      label: "",
+    })),
+  });
+
+  futureDashboard = buildDashboard(FUTURE_DATE);
+  futureSlotTwo = futureDashboard.slotDetails.find((slot) => slot.id === 2);
+  let nextFutureDashboard = buildDashboard(NEXT_FUTURE_DATE);
+  let nextFutureSlotTwo = nextFutureDashboard.slotDetails.find((slot) => slot.id === 2);
+
+  expect(
+    futureSlotTwo && futureSlotTwo.rooms.every((room) => room.mode === "available"),
+    "Expected an explicit available setting to release previously fixed rooms.",
+  );
+  expect(
+    nextFutureSlotTwo && nextFutureSlotTwo.rooms.every((room) => room.mode === "available"),
+    "Expected released room settings to carry forward after being changed back to available.",
   );
 
   const firstConfirmed = createReservation({

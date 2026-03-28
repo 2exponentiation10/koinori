@@ -177,15 +177,27 @@ function normalizeSettingLabel(slot, mode, label) {
 }
 
 function listRoomSlotSettings(dateIso) {
-  return db
+  const rows = db
     .prepare(
       `
-        SELECT room_id, slot_id, mode, label
+        SELECT reservation_date, room_id, slot_id, mode, label
         FROM room_slot_settings
-        WHERE reservation_date = ?
+        WHERE reservation_date <= ?
+        ORDER BY reservation_date DESC, updated_at DESC, id DESC
       `,
     )
     .all(dateIso);
+  const latestSettings = new Map();
+
+  rows.forEach((row) => {
+    const key = makeCellKey(row.room_id, row.slot_id);
+
+    if (!latestSettings.has(key)) {
+      latestSettings.set(key, row);
+    }
+  });
+
+  return Array.from(latestSettings.values());
 }
 
 function buildRoomSlotStateMap(dateIso) {
@@ -981,22 +993,6 @@ const updateRoomSlotSettingsTx = db.transaction((input) => {
   });
 
   sanitized.settings.forEach((setting) => {
-    const defaultState = getDefaultCellState(sanitized.slot);
-    const defaultLabel = normalizeSettingLabel(sanitized.slot, defaultState.mode, defaultState.label);
-    const isDefault = setting.mode === defaultState.mode && setting.label === defaultLabel;
-
-    if (isDefault) {
-      db.prepare(
-        `
-          DELETE FROM room_slot_settings
-          WHERE reservation_date = ?
-            AND room_id = ?
-            AND slot_id = ?
-        `,
-      ).run(sanitized.reservationDate, setting.roomId, sanitized.slot.id);
-      return;
-    }
-
     db.prepare(
       `
         INSERT INTO room_slot_settings (
