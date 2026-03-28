@@ -92,6 +92,9 @@ function pickInitialSlotId(room, preferredSlotId, fallbackSlotId) {
 
 function buildPublicAppState(options = {}) {
   const dashboard = buildDashboard(options.dateInput);
+  const requestedScreen = options.initialScreen || "intro";
+  const initialScreen =
+    dashboard.bookingStatus.open || requestedScreen === "status" ? requestedScreen : "intro";
   const formValues = normalizeFormValues(
     options.formValues,
     dashboard.selectedDate,
@@ -113,8 +116,8 @@ function buildPublicAppState(options = {}) {
 
   return {
     appTitle:
-      options.initialScreen === "status" ? "KOINORI 예약 현황" : "KOINORI 주일 룸 예약",
-    initialScreen: options.initialScreen || "intro",
+      initialScreen === "status" ? "KOINORI 예약 현황" : "KOINORI 주일 룸 예약",
+    initialScreen,
     selectedDate: dashboard.selectedDate,
     selectedDateLabel: dashboard.selectedDateLabel,
     currentTimeLabel: dashboard.currentTimeLabel,
@@ -122,6 +125,7 @@ function buildPublicAppState(options = {}) {
     bookingStatus: dashboard.bookingStatus,
     serverNowIso: dashboard.currentTimeIso,
     bookingOpenAtIso: dashboard.bookingOpenAtIso,
+    bookingCloseAtIso: dashboard.bookingCloseAtIso,
     minAttendees: MIN_ATTENDEES,
     noticeItems: NOTICE_ITEMS,
     summary: dashboard.summary,

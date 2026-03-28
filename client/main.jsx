@@ -331,9 +331,13 @@ function App({ initialState }) {
     null;
   const selectedSlot = findSlot(selectedRoom, selectedSlotId);
   const bookingOpenAtMs = Date.parse(appState.bookingOpenAtIso || "");
+  const bookingCloseAtMs = Date.parse(appState.bookingCloseAtIso || "");
   const hasErrorState = appState.bookingStatus.kind === "error" && !appState.bookingStatus.open;
-  const bookingIsOpen =
-    !hasErrorState && Number.isFinite(bookingOpenAtMs) ? nowMs >= bookingOpenAtMs : Boolean(appState.bookingStatus.open);
+  const bookingWindowHasStarted = Number.isFinite(bookingOpenAtMs)
+    ? nowMs >= bookingOpenAtMs
+    : Boolean(appState.bookingStatus.open);
+  const bookingWindowHasEnded = Number.isFinite(bookingCloseAtMs) ? nowMs >= bookingCloseAtMs : false;
+  const bookingIsOpen = !hasErrorState && bookingWindowHasStarted && !bookingWindowHasEnded;
   const attendeesNumber = Number.parseInt(formValues.attendees, 10);
   const attendeesInvalid =
     formValues.attendees !== "" && (!Number.isInteger(attendeesNumber) || attendeesNumber < minAttendees);
@@ -348,6 +352,8 @@ function App({ initialState }) {
     !isSubmitting;
   const liveStatus = hasErrorState
     ? appState.bookingStatus
+    : bookingWindowHasEnded
+      ? { kind: "closed", message: "이번 주일 예약은 마감되었습니다. 현황만 확인할 수 있습니다." }
     : bookingIsOpen
       ? { kind: "open", message: "지금 예약할 수 있습니다. 아래 큰 버튼을 눌러 진행해 주세요." }
       : appState.bookingStatus;
@@ -427,6 +433,11 @@ function App({ initialState }) {
   }
 
   function openCancelModal() {
+    if (!bookingIsOpen) {
+      setFlash({ message: "예약과 취소는 목요일 10시부터 일요일 자정까지만 가능합니다.", level: "info" });
+      return;
+    }
+
     setCancelValues((current) => ({
       reservationNumber: recentAction?.reservationNumber || current.reservationNumber || "",
       contactLastFour: recentAction?.contactLastFour || current.contactLastFour || "",
@@ -871,33 +882,42 @@ function App({ initialState }) {
 
             <div className={`status-banner status-${liveStatus.kind}`}>{liveStatus.message}</div>
 
-            <div className="page-actions intro-actions">
-              <button
-                type="button"
-                className="primary-button"
-                disabled={!bookingIsOpen}
-                onClick={() => goToScreen("room")}
-              >
-                {hasErrorState
-                  ? "예약 가능 날짜가 아닙니다"
-                  : bookingIsOpen
-                    ? "예약 시작"
-                    : "목요일 10:00부터 예약 시작"}
-              </button>
-              <button type="button" className="secondary-button" onClick={openCancelModal}>
-                예약 취소
-              </button>
-            </div>
+            {bookingIsOpen ? (
+              <>
+                <div className="page-actions intro-actions">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    disabled={!bookingIsOpen}
+                    onClick={() => goToScreen("room")}
+                  >
+                    예약 시작
+                  </button>
+                  <button type="button" className="secondary-button" onClick={openCancelModal}>
+                    예약 취소
+                  </button>
+                </div>
 
-            <article className="overview-banner">
-              <strong>지금 바로 예약 가능한 시간 {appState.summary.remainingAssignments}개</strong>
-              <span>
-                예약 완료 {appState.summary.totalConfirmed}팀
-                {appState.summary.totalWaitlisted > 0
-                  ? ` · 대기 ${appState.summary.totalWaitlisted}팀`
-                  : " · 현재 대기 없음"}
-              </span>
-            </article>
+                <article className="overview-banner">
+                  <strong>지금 바로 예약 가능한 시간 {appState.summary.remainingAssignments}개</strong>
+                  <span>
+                    예약 완료 {appState.summary.totalConfirmed}팀
+                    {appState.summary.totalWaitlisted > 0
+                      ? ` · 대기 ${appState.summary.totalWaitlisted}팀`
+                      : " · 현재 대기 없음"}
+                  </span>
+                </article>
+              </>
+            ) : (
+              <div className="page-actions intro-actions">
+                <button type="button" className="primary-button" disabled>
+                  목요일 10:00부터 예약과 취소 가능
+                </button>
+                <button type="button" className="secondary-button" onClick={() => goToScreen("status")}>
+                  예약 현황 보기
+                </button>
+              </div>
+            )}
 
             <div className="notice-stack" aria-label="필수 안내">
               {introNotices.map(renderNoticeCard)}
@@ -1114,11 +1134,13 @@ function App({ initialState }) {
 
           {renderRecentActionCard()}
 
-          <div className="page-actions compact-actions compact-actions-top">
-            <button type="button" className="danger-button" onClick={openCancelModal}>
-              예약 취소
-            </button>
-          </div>
+          {bookingIsOpen ? (
+            <div className="page-actions compact-actions compact-actions-top">
+              <button type="button" className="danger-button" onClick={openCancelModal}>
+                예약 취소
+              </button>
+            </div>
+          ) : null}
 
           <div className="room-tab-grid">{rooms.map(statusRoomButton)}</div>
 

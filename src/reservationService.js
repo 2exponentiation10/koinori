@@ -70,6 +70,10 @@ function getBookingOpenAt(sundayDate) {
     .setLocale("ko");
 }
 
+function getBookingCloseAt(sundayDate) {
+  return sundayDate.plus({ days: 1 }).startOf("day").setLocale("ko");
+}
+
 function getBookingStatus(sundayDate, now = getNow()) {
   const today = now.startOf("day");
 
@@ -90,12 +94,21 @@ function getBookingStatus(sundayDate, now = getNow()) {
   }
 
   const openAt = getBookingOpenAt(sundayDate);
+  const closeAt = getBookingCloseAt(sundayDate);
 
   if (now < openAt) {
     return {
       kind: "pending",
       open: false,
       message: `${openAt.toFormat("M월 d일 (ccc) HH:mm")}부터 예약이 열립니다.`,
+    };
+  }
+
+  if (now >= closeAt) {
+    return {
+      kind: "closed",
+      open: false,
+      message: "이번 주일 예약은 마감되었습니다. 예약 현황만 볼 수 있습니다.",
     };
   }
 
@@ -857,6 +870,13 @@ const cancelReservationByLookupTx = db.transaction((input) => {
     throw new Error("연락처 뒤 4자리가 맞지 않습니다.");
   }
 
+  const reservationDate = parseSundayDate(activeReservation.reservation_date);
+  const bookingStatus = getBookingStatus(reservationDate, getNow());
+
+  if (!bookingStatus.open) {
+    throw new Error("예약과 취소는 목요일 10시부터 일요일 자정까지만 가능합니다.");
+  }
+
   return cancelReservationTx(sanitized.reservationId);
 });
 
@@ -1021,6 +1041,7 @@ function buildDashboard(dateInput) {
   const now = getNow();
   const selectedDate = normalizeDate(dateInput, now);
   const bookingOpenAt = getBookingOpenAt(selectedDate);
+  const bookingCloseAt = getBookingCloseAt(selectedDate);
   const schedule = buildSchedule(selectedDate.toISODate());
   const defaultSlot =
     schedule.slotDetails.find((slot) => slot.bookable) || schedule.slotDetails[0];
@@ -1032,6 +1053,7 @@ function buildDashboard(dateInput) {
     selectedDateLabel: selectedDate.toFormat("M월 d일 (ccc)"),
     bookingOpenAtLabel: bookingOpenAt.toFormat("M월 d일 (ccc) HH:mm"),
     bookingOpenAtIso: bookingOpenAt.toISO(),
+    bookingCloseAtIso: bookingCloseAt.toISO(),
     bookingStatus: getBookingStatus(selectedDate, now),
     sundayOptions: getSundayOptions(8, now).map((option) => ({
       ...option,

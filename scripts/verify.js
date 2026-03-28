@@ -1,4 +1,5 @@
 const db = require("../src/db");
+const { buildPublicAppState } = require("../src/publicAppState");
 const {
   buildDashboard,
   cancelReservation,
@@ -8,6 +9,7 @@ const {
 } = require("../src/reservationService");
 
 const TEST_DATE = "2026-03-29";
+const FUTURE_DATE = "2026-04-05";
 
 function expect(condition, message) {
   if (!condition) {
@@ -18,6 +20,8 @@ function expect(condition, message) {
 function cleanup() {
   db.prepare("DELETE FROM reservations WHERE reservation_date = ?").run(TEST_DATE);
   db.prepare("DELETE FROM room_slot_settings WHERE reservation_date = ?").run(TEST_DATE);
+  db.prepare("DELETE FROM reservations WHERE reservation_date = ?").run(FUTURE_DATE);
+  db.prepare("DELETE FROM room_slot_settings WHERE reservation_date = ?").run(FUTURE_DATE);
 }
 
 cleanup();
@@ -163,6 +167,74 @@ try {
   expect(
     cancellation.promoted && cancellation.promoted.communityName === "대기공동체",
     "Expected the room-specific waitlist to be promoted after cancellation.",
+  );
+
+  const futureState = buildPublicAppState({
+    dateInput: FUTURE_DATE,
+    initialScreen: "form",
+  });
+  const futureStatusState = buildPublicAppState({
+    dateInput: FUTURE_DATE,
+    initialScreen: "status",
+  });
+
+  expect(
+    futureState.initialScreen === "intro",
+    "Expected future booking screens to stay blocked before the booking window opens.",
+  );
+  expect(
+    futureStatusState.initialScreen === "status",
+    "Expected future reservation status to remain accessible before the booking window opens.",
+  );
+  expect(futureState.bookingCloseAtIso, "Expected the public state to include a booking close time.");
+
+  const futureInsert = db
+    .prepare(
+      `
+        INSERT INTO reservations (
+          reservation_date,
+          slot_id,
+          room_id,
+          community_name,
+          requester_name,
+          attendees,
+          contact,
+          note,
+          status,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'confirmed', ?, ?)
+      `,
+    )
+    .run(
+      FUTURE_DATE,
+      2,
+      3,
+      "미래예약",
+      "확인용",
+      6,
+      "010-7777-4321",
+      "",
+      "2026-03-28T12:00:00.000+09:00",
+      "2026-03-28T12:00:00.000+09:00",
+    );
+
+  let futureCancelBlocked = false;
+
+  try {
+    cancelReservationByLookup({
+      reservationNumber: String(futureInsert.lastInsertRowid).padStart(4, "0"),
+      contactLastFour: "4321",
+    });
+  } catch (error) {
+    futureCancelBlocked =
+      error.message === "예약과 취소는 목요일 10시부터 일요일 자정까지만 가능합니다.";
+  }
+
+  expect(
+    futureCancelBlocked,
+    "Expected public cancellation to stay blocked before the next booking window opens.",
   );
 
   console.log("Verification passed.");

@@ -367,7 +367,7 @@ function handlePublicCancellation(req, res, options = {}) {
         message,
         state: buildPublicAppState({
           dateInput: req.body.reservationDate,
-          initialScreen: "intro",
+          initialScreen: "status",
           message,
           level: "error",
           cancelLookup: {
@@ -383,7 +383,7 @@ function handlePublicCancellation(req, res, options = {}) {
       statusCode: 400,
       message,
       level: "error",
-      screen: "intro",
+      screen: "status",
     });
   }
 }
