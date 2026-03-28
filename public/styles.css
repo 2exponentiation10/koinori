@@ -708,7 +708,7 @@ button {
   border: 1px solid rgba(33, 30, 26, 0.08);
   background: rgba(255, 255, 255, 0.86);
   display: grid;
-  gap: 4px;
+  gap: 6px;
 }
 
 .room-pick-stat span {
@@ -721,9 +721,32 @@ button {
   line-height: 1;
 }
 
-.room-pick-action {
-  font-size: 0.9rem;
+.room-pick-slot-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.room-pick-slot-pill,
+.room-pick-slot-empty {
+  min-height: 22px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  font-size: 0.68rem;
   font-weight: 800;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+
+.room-pick-slot-pill {
+  background: rgba(33, 73, 63, 0.1);
+  color: var(--primary);
+}
+
+.room-pick-slot-empty {
+  background: rgba(112, 110, 105, 0.12);
+  color: var(--muted);
 }
 
 .room-pick-card.is-selected {

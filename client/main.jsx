@@ -32,26 +32,25 @@ function readInitialState() {
 }
 
 function getRoomMetrics(room) {
-  const openCount = room.slots.filter((slot) => slot.actionType === "reserve").length;
-  const waitCount = room.slots.filter((slot) => slot.actionType === "waitlist").length;
+  const openSlots = room.slots.filter((slot) => slot.actionType === "reserve");
+  const waitSlots = room.slots.filter((slot) => slot.actionType === "waitlist");
+  const openCount = openSlots.length;
+  const waitCount = waitSlots.length;
   const fixedCount = room.slots.filter((slot) => slot.status === "fixed").length;
   const closedCount = room.slots.filter((slot) => slot.status === "closed").length;
   const operationCount = room.slots.filter((slot) => slot.status !== "closed").length;
   let state = "closed";
   let badge = "예약 불가";
-  let action = "선택 불가";
   let helperText = "오늘은 예약을 받지 않습니다.";
 
   if (openCount > 0) {
     state = "open";
     badge = `예약 가능 ${openCount}타임`;
-    action = "선택";
-    helperText = "바로 예약 가능한 시간이 있습니다.";
+    helperText = "";
   } else if (waitCount > 0) {
     state = "wait";
     badge = "대기 가능";
-    action = "대기 확인";
-    helperText = "바로 예약은 마감됐고 대기만 가능합니다.";
+    helperText = "";
   } else if (fixedCount === room.slots.length) {
     state = "fixed";
     badge = "고정 사용";
@@ -63,12 +62,13 @@ function getRoomMetrics(room) {
   return {
     openCount,
     waitCount,
+    openSlotLabels: openSlots.map((slot) => slot.label),
+    waitSlotLabels: waitSlots.map((slot) => slot.label),
     fixedCount,
     closedCount,
     operationCount,
     state,
     badge,
-    action,
     helperText,
   };
 }
@@ -263,6 +263,22 @@ function getRecentActionTitle(recentAction) {
   }
 
   return "";
+}
+
+function renderSlotPills(labels, ariaLabel) {
+  if (!labels.length) {
+    return <span className="room-pick-slot-empty">없음</span>;
+  }
+
+  return (
+    <div className="room-pick-slot-list" aria-label={ariaLabel}>
+      {labels.map((label) => (
+        <span key={label} className="room-pick-slot-pill">
+          {label}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function applyServerState(
@@ -720,14 +736,15 @@ function App({ initialState }) {
           <span className="room-pick-stat">
             <span>바로 예약</span>
             <strong>{metrics.openCount}</strong>
+            {renderSlotPills(metrics.openSlotLabels, "바로 예약 가능한 타임")}
           </span>
           <span className="room-pick-stat">
             <span>대기 가능</span>
             <strong>{metrics.waitCount}</strong>
+            {renderSlotPills(metrics.waitSlotLabels, "대기 가능한 타임")}
           </span>
         </span>
-        <span className="room-pick-detail">{metrics.helperText}</span>
-        <span className="room-pick-action">{metrics.action}</span>
+        {metrics.helperText ? <span className="room-pick-detail">{metrics.helperText}</span> : null}
       </button>
     );
   }
