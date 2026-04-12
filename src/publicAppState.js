@@ -16,7 +16,7 @@ function normalizeFormValues(values = {}, fallbackDate, fallbackSlotId) {
     reservationDate: values.reservationDate || fallbackDate,
     communityName: values.communityName || "",
     requesterName: values.requesterName || "",
-    attendees: values.attendees || MIN_ATTENDEES,
+    attendees: 1,
     slotId: Number(values.slotId || fallbackSlotId || 1),
     roomId: values.roomId ? Number(values.roomId) : null,
     contact: values.contact || "",
@@ -45,6 +45,7 @@ function buildPublicRooms(schedule) {
   return schedule.rooms.map((room) => ({
     id: room.id,
     name: room.name,
+    capacity: room.capacity ?? null,
     slots: room.slots.map((slot) => ({
       slotId: slot.slot.id,
       label: slot.slot.label,

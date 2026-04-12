@@ -11,6 +11,7 @@ const {
   cancelReservation,
   cancelReservationByLookup,
   createReservation,
+  updateRoomMetadata,
   updateRoomSlotSettings,
 } = require("./src/reservationService");
 
@@ -604,6 +605,38 @@ app.post("/admin/settings/slots/:slotId", requireAdmin, (req, res) => {
       date: reservationDate,
       page: "settings",
       settingSlot: slotId,
+    });
+  }
+});
+
+app.post("/admin/settings/rooms", requireAdmin, (req, res) => {
+  try {
+    const rooms = Object.keys(req.body)
+      .filter((key) => key.startsWith("capacity_"))
+      .map((key) => ({
+        roomId: key.slice("capacity_".length),
+        capacity: req.body[key],
+      }));
+
+    updateRoomMetadata({ rooms });
+
+    redirectWithFlash(
+      res,
+      "/admin",
+      {
+        date: req.body.date,
+        page: "settings",
+      },
+      "방 정보를 저장했습니다.",
+      "success",
+    );
+  } catch (error) {
+    renderAdminPage(req, res, {
+      statusCode: 400,
+      message: error.message || "방 정보 저장 중 오류가 발생했습니다.",
+      level: "error",
+      date: req.body.date,
+      page: "settings",
     });
   }
 });

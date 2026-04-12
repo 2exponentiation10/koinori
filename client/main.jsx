@@ -265,8 +265,43 @@ function getRecentActionTitle(recentAction) {
   return "";
 }
 
-function formatSlotSummary(labels) {
-  return labels.join(" · ");
+function renderSlotSummary(labels, tone) {
+  return (
+    <span className="room-pick-slot-list">
+      {labels.map((label) => (
+        <span key={`${tone}-${label}`} className={`room-pick-slot-pill room-pick-slot-pill-${tone}`}>
+          -{label}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function formatRoomTitle(room) {
+  if (!room) {
+    return "선택한 방 없음";
+  }
+
+  return room.capacity ? `${room.name} · ${room.capacity}인실` : room.name;
+}
+
+function buildNavigationSnapshot({
+  screen,
+  selectedRoomId,
+  selectedSlotId,
+  waitlistModalOpen,
+  cancelModalOpen,
+  adminModalOpen,
+}) {
+  return {
+    app: "koinori-public",
+    screen,
+    selectedRoomId,
+    selectedSlotId,
+    waitlistModalOpen,
+    cancelModalOpen,
+    adminModalOpen,
+  };
 }
 
 function applyServerState(
@@ -287,7 +322,7 @@ function applyServerState(
     setSelectedSlotId(nextState.selectedSlotId);
     setFormValues({
       ...nextState.formValues,
-      attendees: String(nextState.formValues.attendees ?? ""),
+      attendees: "1",
     });
     setCancelValues(nextState.cancelLookup || { reservationNumber: "", contactLastFour: "" });
     setFlash(
@@ -306,7 +341,7 @@ function App({ initialState }) {
   const [selectedSlotId, setSelectedSlotId] = useState(initialState.selectedSlotId);
   const [formValues, setFormValues] = useState({
     ...initialState.formValues,
-    attendees: String(initialState.formValues.attendees ?? ""),
+    attendees: "1",
   });
   const [cancelValues, setCancelValues] = useState(
     initialState.cancelLookup || { reservationNumber: "", contactLastFour: "" },
@@ -320,14 +355,15 @@ function App({ initialState }) {
   const [waitlistModalOpen, setWaitlistModalOpen] = useState(Boolean(initialState.waitlistPrompt));
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [adminModalOpen, setAdminModalOpen] = useState(false);
-  const [attendeesTouched, setAttendeesTouched] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [cancelSubmitting, setCancelSubmitting] = useState(false);
   const [nowMs, setNowMs] = useState(Date.parse(initialState.serverNowIso) || Date.now());
   const tapCountRef = useRef(0);
   const tapResetRef = useRef(null);
+  const historyRestoringRef = useRef(false);
+  const historyReadyRef = useRef(false);
+  const lastHistoryKeyRef = useRef("");
   const rooms = appState.rooms || [];
-  const minAttendees = appState.minAttendees || 4;
   const selectedRoom =
     findRoom(rooms, selectedRoomId) ||
     rooms.find((room) => room.slots.some((slot) => slot.interactive)) ||
@@ -342,14 +378,9 @@ function App({ initialState }) {
     : Boolean(appState.bookingStatus.open);
   const bookingWindowHasEnded = Number.isFinite(bookingCloseAtMs) ? nowMs >= bookingCloseAtMs : false;
   const bookingIsOpen = !hasErrorState && bookingWindowHasStarted && !bookingWindowHasEnded;
-  const attendeesNumber = Number.parseInt(formValues.attendees, 10);
-  const attendeesInvalid =
-    formValues.attendees !== "" && (!Number.isInteger(attendeesNumber) || attendeesNumber < minAttendees);
-  const showAttendeesError = attendeesTouched && attendeesInvalid;
   const canSubmit =
     bookingIsOpen &&
     Boolean(selectedRoom && selectedSlot && selectedSlot.interactive) &&
-    !attendeesInvalid &&
     formValues.communityName.trim() &&
     formValues.requesterName.trim() &&
     formValues.contact.trim() &&
@@ -410,6 +441,66 @@ function App({ initialState }) {
   }, [screen]);
 
   useEffect(() => {
+    const onPopState = (event) => {
+      const state = event.state;
+
+      if (!state || state.app !== "koinori-public") {
+        return;
+      }
+
+      historyRestoringRef.current = true;
+      setScreen(state.screen || "intro");
+      setSelectedRoomId(state.selectedRoomId);
+      setSelectedSlotId(state.selectedSlotId);
+      setWaitlistModalOpen(Boolean(state.waitlistModalOpen));
+      setCancelModalOpen(Boolean(state.cancelModalOpen));
+      setAdminModalOpen(Boolean(state.adminModalOpen));
+
+      if (!state.waitlistModalOpen) {
+        setWaitlistPrompt(null);
+      }
+    };
+
+    window.addEventListener("popstate", onPopState);
+
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+    };
+  }, []);
+
+  useEffect(() => {
+    const nextState = buildNavigationSnapshot({
+      screen,
+      selectedRoomId,
+      selectedSlotId,
+      waitlistModalOpen,
+      cancelModalOpen,
+      adminModalOpen,
+    });
+    const nextKey = JSON.stringify(nextState);
+
+    if (!historyReadyRef.current) {
+      window.history.replaceState(nextState, "", window.location.href);
+      historyReadyRef.current = true;
+      lastHistoryKeyRef.current = nextKey;
+      return;
+    }
+
+    if (historyRestoringRef.current) {
+      historyRestoringRef.current = false;
+      lastHistoryKeyRef.current = nextKey;
+      return;
+    }
+
+    if (nextKey === lastHistoryKeyRef.current) {
+      return;
+    }
+
+    window.history.pushState(nextState, "", window.location.href);
+    lastHistoryKeyRef.current = nextKey;
+  }, [screen, selectedRoomId, selectedSlotId, waitlistModalOpen, cancelModalOpen, adminModalOpen]);
+
+  useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
   }, [screen]);
 
@@ -468,12 +559,17 @@ function App({ initialState }) {
     setScreen(nextScreen);
   }
 
+  function goBackOrFallback(fallbackScreen) {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+
+    goToScreen(fallbackScreen);
+  }
+
   function changeFormValue(field, value) {
     let nextValue = value;
-
-    if (field === "attendees") {
-      nextValue = value.replace(/[^\d]/g, "").slice(0, 3);
-    }
 
     if (field === "contact") {
       nextValue = value.replace(/[^\d-]/g, "").slice(0, 13);
@@ -535,13 +631,6 @@ function App({ initialState }) {
       return;
     }
 
-    setAttendeesTouched(true);
-
-    if (attendeesInvalid) {
-      setFlash({ message: `최소 ${minAttendees}명부터 신청할 수 있습니다.`, level: "error" });
-      return;
-    }
-
     if (!formValues.communityName.trim()) {
       setFlash({ message: "공동체 이름을 입력해 주세요.", level: "error" });
       return;
@@ -573,7 +662,7 @@ function App({ initialState }) {
           roomId: selectedRoom.id,
           communityName: formValues.communityName.trim(),
           requesterName: formValues.requesterName.trim(),
-          attendees: formValues.attendees,
+          attendees: "1",
           contact: formValues.contact.trim(),
           note: formValues.note.trim(),
           waitlistConsent: waitlistConsent ? "1" : "0",
@@ -717,7 +806,7 @@ function App({ initialState }) {
         disabled={disabled}
       >
         <span className="room-pick-head">
-          <strong>{room.name}</strong>
+          <strong>{formatRoomTitle(room)}</strong>
           <small className={`room-pick-badge room-pick-badge-${metrics.state}`}>{metrics.badge}</small>
         </span>
         {metrics.openCount > 0 || metrics.waitCount > 0 ? (
@@ -725,13 +814,13 @@ function App({ initialState }) {
             {metrics.openCount > 0 ? (
               <span className="room-pick-line room-pick-line-open">
                 <span className="room-pick-line-label">예약 {metrics.openCount}타임</span>
-                <span className="room-pick-line-slots">{formatSlotSummary(metrics.openSlotLabels)}</span>
+                <span className="room-pick-line-slots">{renderSlotSummary(metrics.openSlotLabels, "open")}</span>
               </span>
             ) : null}
             {metrics.waitCount > 0 ? (
               <span className="room-pick-line room-pick-line-wait">
                 <span className="room-pick-line-label">대기 {metrics.waitCount}타임</span>
-                <span className="room-pick-line-slots">{formatSlotSummary(metrics.waitSlotLabels)}</span>
+                <span className="room-pick-line-slots">{renderSlotSummary(metrics.waitSlotLabels, "wait")}</span>
               </span>
             ) : null}
           </span>
@@ -845,8 +934,8 @@ function App({ initialState }) {
           setSelectedSlotId(pickSlotId(room, selectedSlotId, appState.selectedSlotId));
         }}
       >
-        <strong>{room.name}</strong>
-        <span>{metrics.openCount > 0 ? `바로 예약 ${metrics.openCount}타임` : metrics.badge}</span>
+        <strong>{formatRoomTitle(room)}</strong>
+        <span>{metrics.openCount > 0 ? `바로 예약 ${metrics.openCount}개 시간` : metrics.badge}</span>
       </button>
     );
   }
@@ -869,7 +958,7 @@ function App({ initialState }) {
         <section className="page-card intro-page is-active">
           <article className="hero-card intro-hero-card">
             <h1>주일 룸 예약</h1>
-            <p className="hero-text">큰 버튼만 순서대로 누르면 예약할 수 있습니다.</p>
+            <p className="hero-text">방과 시간을 고른 뒤 필수 정보만 간단히 남기면 바로 신청할 수 있습니다.</p>
 
             <div className="hero-meta">
               <div>
@@ -957,7 +1046,7 @@ function App({ initialState }) {
           <div className="room-selector-grid">{rooms.map(renderRoomCard)}</div>
 
           <div className="page-actions compact-actions">
-            <button type="button" className="secondary-button" onClick={() => goToScreen("intro")}>
+            <button type="button" className="secondary-button" onClick={() => goBackOrFallback("intro")}>
               처음으로
             </button>
           </div>
@@ -974,7 +1063,7 @@ function App({ initialState }) {
           </div>
 
           <div className="selection-banner">
-            <strong>{selectedRoom ? selectedRoom.name : "선택한 방 없음"}</strong>
+            <strong>{formatRoomTitle(selectedRoom)}</strong>
             <span>
               {selectedRoom
                 ? `${getRoomMetrics(selectedRoom).openCount}개 시간 바로 예약 가능`
@@ -1007,7 +1096,7 @@ function App({ initialState }) {
           </section>
 
           <div className="page-actions compact-actions">
-            <button type="button" className="secondary-button" onClick={() => goToScreen("room")}>
+            <button type="button" className="secondary-button" onClick={() => goBackOrFallback("room")}>
               방 다시 선택
             </button>
           </div>
@@ -1026,7 +1115,7 @@ function App({ initialState }) {
           <div className="selection-summary compact-summary-card">
             <div>
               <span>방</span>
-              <strong>{selectedRoom ? selectedRoom.name : "선택 전"}</strong>
+              <strong>{formatRoomTitle(selectedRoom)}</strong>
             </div>
             <div>
               <span>시간</span>
@@ -1076,25 +1165,6 @@ function App({ initialState }) {
             </label>
 
             <label className="field">
-              <span>인원 수</span>
-              <input
-                type="number"
-                min={minAttendees}
-                step="1"
-                inputMode="numeric"
-                value={formValues.attendees}
-                onChange={(event) => {
-                  changeFormValue("attendees", event.target.value);
-                  setAttendeesTouched(true);
-                }}
-                required
-              />
-              <small className="field-error" hidden={!showAttendeesError}>
-                최소 {minAttendees}명부터 신청할 수 있습니다.
-              </small>
-            </label>
-
-            <label className="field">
               <span>연락처</span>
               <input
                 type="tel"
@@ -1117,7 +1187,7 @@ function App({ initialState }) {
             </label>
 
             <div className="page-actions compact-actions">
-              <button type="button" className="secondary-button" onClick={() => goToScreen("slot")}>
+              <button type="button" className="secondary-button" onClick={() => goBackOrFallback("slot")}>
                 시간 다시 선택
               </button>
               <button type="submit" className="primary-button" disabled={!canSubmit}>

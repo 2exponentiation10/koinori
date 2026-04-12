@@ -1,5 +1,5 @@
 const APP_TIME_ZONE = "Asia/Seoul";
-const MIN_ATTENDEES = 4;
+const MIN_ATTENDEES = 1;
 const ROOM_MODES = {
   AVAILABLE: "available",
   FIXED: "fixed",
@@ -7,12 +7,6 @@ const ROOM_MODES = {
 };
 
 const NOTICE_ITEMS = [
-  {
-    id: "min-attendees",
-    title: "최소 4명",
-    detail: "4명 이상 모임만 신청할 수 있습니다.",
-    screens: ["intro"],
-  },
   {
     id: "booking-open",
     title: "목요일 오전 10시 오픈",
@@ -35,15 +29,15 @@ const NOTICE_ITEMS = [
 ];
 
 const ROOMS = [
-  { id: 1, name: "1번 사랑방" },
-  { id: 2, name: "2번 희락방" },
-  { id: 3, name: "3번 화평방" },
-  { id: 4, name: "4번 오래참음방" },
-  { id: 5, name: "5번 자비방" },
-  { id: 6, name: "6번 양선방" },
-  { id: 7, name: "7번 충성방" },
-  { id: 8, name: "8번 온유방" },
-  { id: 9, name: "9번 겨울방" },
+  { id: 1, name: "1번 사랑방", defaultCapacity: null },
+  { id: 2, name: "2번 희락방", defaultCapacity: null },
+  { id: 3, name: "3번 화평방", defaultCapacity: null },
+  { id: 4, name: "4번 오래참음방", defaultCapacity: null },
+  { id: 5, name: "5번 자비방", defaultCapacity: null },
+  { id: 6, name: "6번 양선방", defaultCapacity: null },
+  { id: 7, name: "7번 충성방", defaultCapacity: null },
+  { id: 8, name: "8번 온유방", defaultCapacity: null },
+  { id: 9, name: "9번 겨울방", defaultCapacity: null },
 ];
 
 const TIME_SLOTS = [

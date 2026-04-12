@@ -166,6 +166,36 @@ function getDefaultCellState(slot) {
   };
 }
 
+function listRoomMetadata() {
+  return db
+    .prepare(
+      `
+        SELECT room_id, capacity
+        FROM room_metadata
+        ORDER BY room_id ASC
+      `,
+    )
+    .all();
+}
+
+function buildRoomCatalog() {
+  const metadataMap = new Map(listRoomMetadata().map((row) => [row.room_id, row]));
+
+  return ROOMS.map((room) => {
+    const metadata = metadataMap.get(room.id);
+    const capacity = Number.isInteger(metadata?.capacity)
+      ? metadata.capacity
+      : Number.isInteger(room.defaultCapacity)
+        ? room.defaultCapacity
+        : null;
+
+    return {
+      ...room,
+      capacity,
+    };
+  });
+}
+
 function normalizeSettingLabel(slot, mode, label) {
   const normalizedLabel = String(label || "").trim();
 
@@ -201,12 +231,13 @@ function listRoomSlotSettings(dateIso) {
 }
 
 function buildRoomSlotStateMap(dateIso) {
+  const roomCatalog = buildRoomCatalog();
   const overrides = new Map(
     listRoomSlotSettings(dateIso).map((row) => [makeCellKey(row.room_id, row.slot_id), row]),
   );
   const stateMap = new Map();
 
-  ROOMS.forEach((room) => {
+  roomCatalog.forEach((room) => {
     TIME_SLOTS.forEach((slot) => {
       const override = overrides.get(makeCellKey(room.id, slot.id));
       const defaultState = getDefaultCellState(slot);
@@ -275,6 +306,7 @@ function listReservationsByDate(dateIso) {
 
 function getSlotAvailability(dateIso, slotId) {
   const slot = slotById.get(slotId);
+  const roomCatalog = buildRoomCatalog();
 
   if (!slot) {
     throw new Error("예약 타임을 확인해 주세요.");
@@ -296,12 +328,13 @@ function getSlotAvailability(dateIso, slotId) {
       .pluck()
       .all(dateIso, slotId),
   );
-  const roomStates = ROOMS.map((room) => {
+  const roomStates = roomCatalog.map((room) => {
     const state = stateMap.get(makeCellKey(room.id, slotId));
 
     return {
       roomId: room.id,
       roomName: room.name,
+      roomCapacity: room.capacity,
       mode: state.mode,
       isOccupied: confirmedRoomIds.has(room.id),
     };
@@ -415,6 +448,7 @@ function promoteWaitlistsForSlot(reservationDate, slotId, updatedAt) {
 }
 
 function buildSchedule(dateIso) {
+  const roomCatalog = buildRoomCatalog();
   const roomSlotStateMap = buildRoomSlotStateMap(dateIso);
   const activeReservations = listReservationsByDate(dateIso);
   const confirmedReservations = activeReservations.filter((reservation) => reservation.status === "confirmed");
@@ -448,7 +482,7 @@ function buildSchedule(dateIso) {
   const slotDetails = TIME_SLOTS.map((slot) => {
     const slotView = toSlotView(slot);
     const legacyWaitlistItems = legacyWaitlistMap.get(slot.id) || [];
-    const rooms = ROOMS.map((room) => {
+    const rooms = roomCatalog.map((room) => {
       const state = roomSlotStateMap.get(makeCellKey(room.id, slot.id));
       const reservation = confirmedMap.get(makeCellKey(room.id, slot.id)) || null;
       const waitlistItems = roomWaitlistMap.get(makeCellKey(room.id, slot.id)) || [];
@@ -462,7 +496,7 @@ function buildSchedule(dateIso) {
       if (reservation) {
         status = "reserved";
         title = reservation.communityName;
-        detail = `${reservation.requesterName} · ${reservation.attendees}명`;
+        detail = `${reservation.requesterName}`;
         actionType = "waitlist";
         actionLabel = "이 방 대기";
       } else if (state.mode === ROOM_MODES.FIXED) {
@@ -486,6 +520,7 @@ function buildSchedule(dateIso) {
       return {
         roomId: room.id,
         roomName: room.name,
+        roomCapacity: room.capacity,
         status,
         mode: state.mode,
         label: state.label,
@@ -562,7 +597,7 @@ function buildSchedule(dateIso) {
     };
   });
 
-  const rooms = ROOMS.map((room) => ({
+  const rooms = roomCatalog.map((room) => ({
     ...room,
     slots: slotDetails.map((slotDetail) => ({
       slot: {
@@ -597,6 +632,7 @@ function buildSchedule(dateIso) {
         .map((room) => ({
           roomId: room.roomId,
           roomName: room.roomName,
+          roomCapacity: room.roomCapacity,
           items: room.waitlistItems,
         })),
       legacyItems: slot.legacyWaitlistItems,
@@ -618,7 +654,7 @@ function sanitizeReservationInput(input, now = getNow()) {
   const reservationDate = parseSundayDate(input.reservationDate);
   const slotId = Number.parseInt(input.slotId, 10);
   const roomId = Number.parseInt(input.roomId, 10);
-  const attendees = Number.parseInt(input.attendees, 10);
+  const parsedAttendees = Number.parseInt(input.attendees, 10);
   const communityName = String(input.communityName || "").trim();
   const requesterName = String(input.requesterName || "").trim();
   const contact = String(input.contact || "").trim();
@@ -629,6 +665,10 @@ function sanitizeReservationInput(input, now = getNow()) {
     input.waitlistConsent === "1" ||
     input.waitlistConsent === 1;
   const slot = slotById.get(slotId);
+  const attendees =
+    Number.isInteger(parsedAttendees) && parsedAttendees >= MIN_ATTENDEES
+      ? parsedAttendees
+      : MIN_ATTENDEES;
 
   if (!slot) {
     throw new Error("예약 타임을 선택해 주세요.");
@@ -644,10 +684,6 @@ function sanitizeReservationInput(input, now = getNow()) {
 
   if (!requesterName) {
     throw new Error("신청자 이름을 입력해 주세요.");
-  }
-
-  if (!Number.isInteger(attendees) || attendees < MIN_ATTENDEES) {
-    throw new Error(`최소 ${MIN_ATTENDEES}명 이상만 예약할 수 있습니다.`);
   }
 
   if (!contact) {
@@ -938,6 +974,58 @@ function sanitizeRoomSettingsInput(input) {
   };
 }
 
+function sanitizeRoomMetadataInput(input) {
+  const rooms = Array.isArray(input.rooms) ? input.rooms : [];
+
+  if (!rooms.length) {
+    throw new Error("저장할 방 정보가 없습니다.");
+  }
+
+  return rooms.map((entry) => {
+    const roomId = Number.parseInt(entry.roomId, 10);
+    const room = roomById.get(roomId);
+    const rawCapacity = String(entry.capacity ?? "").trim();
+    const capacity = rawCapacity === "" ? null : Number.parseInt(rawCapacity, 10);
+
+    if (!room) {
+      throw new Error("방 정보를 다시 확인해 주세요.");
+    }
+
+    if (capacity !== null && (!Number.isInteger(capacity) || capacity < 1 || capacity > 99)) {
+      throw new Error(`${room.name} 인실 정보는 1~99 사이 숫자로 입력해 주세요.`);
+    }
+
+    return {
+      roomId,
+      capacity,
+    };
+  });
+}
+
+const updateRoomMetadataTx = db.transaction((input) => {
+  const settings = sanitizeRoomMetadataInput(input);
+  const now = getNow().toISO();
+
+  settings.forEach((setting) => {
+    db.prepare(
+      `
+        INSERT INTO room_metadata (
+          room_id,
+          capacity,
+          updated_at
+        )
+        VALUES (?, ?, ?)
+        ON CONFLICT(room_id)
+        DO UPDATE SET
+          capacity = excluded.capacity,
+          updated_at = excluded.updated_at
+      `,
+    ).run(setting.roomId, setting.capacity, now);
+  });
+
+  return buildRoomCatalog();
+});
+
 const updateRoomSlotSettingsTx = db.transaction((input) => {
   const sanitized = sanitizeRoomSettingsInput(input);
   const now = getNow().toISO();
@@ -1033,6 +1121,10 @@ function updateRoomSlotSettings(input) {
   return updateRoomSlotSettingsTx(input);
 }
 
+function updateRoomMetadata(input) {
+  return updateRoomMetadataTx(input);
+}
+
 function buildDashboard(dateInput) {
   const now = getNow();
   const selectedDate = normalizeDate(dateInput, now);
@@ -1070,5 +1162,6 @@ module.exports = {
   cancelReservationByLookup,
   createReservation,
   formatSlot,
+  updateRoomMetadata,
   updateRoomSlotSettings,
 };

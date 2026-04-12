@@ -138,6 +138,37 @@
           <p class="section-guide">저장한 설정은 같은 타임의 다음 주일에도 이어집니다.</p>
         </div>
 
+        <form method="post" action="/admin/settings/rooms" class="settings-room-meta-form">
+          <input type="hidden" name="date" value="<%= selectedDate %>" />
+
+          <div class="selection-banner compact-banner">
+            <strong>방 기본 정보</strong>
+            <span>각 방이 몇 인실인지 입력해 두면 공개 화면과 관리자 화면에 함께 표시됩니다.</span>
+          </div>
+
+          <div class="room-meta-grid">
+            <% schedule.rooms.forEach((room) => { %>
+              <label class="field room-meta-field">
+                <span><%= room.name %></span>
+                <input
+                  type="number"
+                  min="1"
+                  max="99"
+                  name="capacity_<%= room.id %>"
+                  value="<%= room.capacity || '' %>"
+                  placeholder="예: 6"
+                  inputmode="numeric"
+                />
+                <small><%= room.capacity ? `${room.capacity}인실로 저장됨` : '인실 정보 미설정' %></small>
+              </label>
+            <% }) %>
+          </div>
+
+          <div class="page-actions compact-actions">
+            <button type="submit" class="primary-button">방 정보 저장</button>
+          </div>
+        </form>
+
         <div class="slot-chip-row">
           <% slotDetails.forEach((slot) => { %>
             <button type="button" class="slot-chip-button <%= slot.id === defaultSlotId ? 'is-active' : '' %>" data-setting-slot-tab="<%= slot.id %>">
@@ -179,7 +210,7 @@
                 <article class="settings-room-card">
                   <div class="settings-room-head">
                     <strong><%= room.roomName %></strong>
-                    <span><%= room.title %> · <%= room.detail %></span>
+                    <span><%= room.roomCapacity ? `${room.roomCapacity}인실 · ` : '' %><%= room.title %> · <%= room.detail %></span>
                   </div>
 
                   <div class="mode-group">
@@ -260,7 +291,7 @@
                 </div>
 
                 <div class="management-title">
-                  <strong><%= reservation.communityName %> / <%= reservation.attendees %>명</strong>
+                  <strong><%= reservation.communityName %></strong>
                   <span><%= reservation.requesterName %> · <%= reservation.createdAtLabel %></span>
                 </div>
 
@@ -304,10 +335,10 @@
 
                   <% waitlist.rooms.forEach((room) => { %>
                     <div class="room-waitlist-block">
-                      <strong><%= room.roomName %></strong>
+                      <strong><%= room.roomName %><%= room.roomCapacity ? ` · ${room.roomCapacity}인실` : '' %></strong>
                       <ol class="waitlist-list">
                         <% room.items.forEach((reservation, index) => { %>
-                          <li><%= index + 1 %>. <%= reservation.communityName %> / <%= reservation.requesterName %> / <%= reservation.attendees %>명</li>
+                          <li><%= index + 1 %>. <%= reservation.communityName %> / <%= reservation.requesterName %></li>
                         <% }) %>
                       </ol>
                     </div>
@@ -318,7 +349,7 @@
                       <strong>방 미지정 대기</strong>
                       <ol class="waitlist-list">
                         <% waitlist.legacyItems.forEach((reservation, index) => { %>
-                          <li><%= index + 1 %>. <%= reservation.communityName %> / <%= reservation.requesterName %> / <%= reservation.attendees %>명</li>
+                          <li><%= index + 1 %>. <%= reservation.communityName %> / <%= reservation.requesterName %></li>
                         <% }) %>
                       </ol>
                     </div>

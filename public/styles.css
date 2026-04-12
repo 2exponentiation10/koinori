@@ -769,6 +769,33 @@ button {
   word-break: keep-all;
 }
 
+.room-pick-slot-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.room-pick-slot-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.room-pick-slot-pill-open {
+  background: rgba(23, 63, 54, 0.1);
+  color: var(--primary);
+}
+
+.room-pick-slot-pill-wait {
+  background: rgba(140, 106, 32, 0.12);
+  color: var(--warning);
+}
+
 .room-pick-card.is-selected {
   border-color: var(--primary);
   box-shadow: 0 0 0 2px rgba(33, 73, 63, 0.14);
@@ -939,6 +966,30 @@ button {
 .board-room-panel,
 .settings-panel {
   display: none;
+}
+
+.settings-room-meta-form {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.room-meta-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.room-meta-field {
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgba(33, 30, 26, 0.08);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+.room-meta-field small {
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
 }
 
 .board-slot-panel.is-active,

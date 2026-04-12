@@ -1,3 +1,5 @@
+const { Settings } = require("luxon");
+
 const db = require("../src/db");
 const { buildPublicAppState } = require("../src/publicAppState");
 const {
@@ -5,12 +7,15 @@ const {
   cancelReservation,
   cancelReservationByLookup,
   createReservation,
+  updateRoomMetadata,
   updateRoomSlotSettings,
 } = require("../src/reservationService");
 
 const TEST_DATE = "2026-03-29";
 const FUTURE_DATE = "2026-04-05";
 const NEXT_FUTURE_DATE = "2026-04-12";
+
+Settings.now = () => Date.parse("2026-03-26T03:00:00.000Z");
 
 function expect(condition, message) {
   if (!condition) {
@@ -19,6 +24,7 @@ function expect(condition, message) {
 }
 
 function cleanup() {
+  db.prepare("DELETE FROM room_metadata").run();
   db.prepare("DELETE FROM reservations WHERE reservation_date = ?").run(TEST_DATE);
   db.prepare("DELETE FROM room_slot_settings WHERE reservation_date = ?").run(TEST_DATE);
   db.prepare("DELETE FROM reservations WHERE reservation_date = ?").run(FUTURE_DATE);
@@ -30,10 +36,22 @@ function cleanup() {
 cleanup();
 
 try {
+  updateRoomMetadata({
+    rooms: [
+      { roomId: 1, capacity: 6 },
+      { roomId: 2, capacity: 4 },
+      { roomId: 3, capacity: 8 },
+    ],
+  });
+
   let dashboard = buildDashboard(TEST_DATE);
   let slotTwo = dashboard.slotDetails.find((slot) => slot.id === 2);
 
   expect(dashboard.schedule.rooms.length === 9, "Expected 9 rooms in the schedule.");
+  expect(
+    dashboard.schedule.rooms.find((room) => room.id === 1)?.capacity === 6,
+    "Expected room metadata to expose capacity.",
+  );
   expect(slotTwo && slotTwo.remainingRooms === 9, "Expected 2타임 to start with 9 open rooms.");
 
   updateRoomSlotSettings({

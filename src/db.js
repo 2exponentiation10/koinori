@@ -49,6 +49,12 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_room_slot_settings_date_slot
     ON room_slot_settings (reservation_date, slot_id);
+
+  CREATE TABLE IF NOT EXISTS room_metadata (
+    room_id INTEGER PRIMARY KEY,
+    capacity INTEGER,
+    updated_at TEXT NOT NULL
+  );
 `);
 
 module.exports = db;
