@@ -57,6 +57,12 @@ db.exec(`
     image_url TEXT DEFAULT '',
     updated_at TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
 `);
 
 function ensureColumn(tableName, columnName, definition) {

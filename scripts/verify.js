@@ -7,6 +7,7 @@ const {
   cancelReservation,
   cancelReservationByLookup,
   createReservation,
+  updateBookingOpenTime,
   updateRoomMetadata,
   updateRoomSlotSettings,
 } = require("../src/reservationService");
@@ -24,6 +25,7 @@ function expect(condition, message) {
 }
 
 function cleanup() {
+  db.prepare("DELETE FROM app_settings WHERE key = 'booking_open_time'").run();
   db.prepare("DELETE FROM room_metadata").run();
   db.prepare("DELETE FROM reservations WHERE reservation_date = ?").run(TEST_DATE);
   db.prepare("DELETE FROM room_slot_settings WHERE reservation_date = ?").run(TEST_DATE);
@@ -36,6 +38,10 @@ function cleanup() {
 cleanup();
 
 try {
+  updateBookingOpenTime({
+    bookingOpenTime: "09:30",
+  });
+
   updateRoomMetadata({
     rooms: [
       {
@@ -51,6 +57,15 @@ try {
 
   let dashboard = buildDashboard(TEST_DATE);
   let slotTwo = dashboard.slotDetails.find((slot) => slot.id === 2);
+
+  expect(
+    dashboard.bookingOpenTime === "09:30",
+    "Expected dashboard to expose custom booking open time.",
+  );
+  expect(
+    dashboard.bookingOpenAtLabel.includes("09:30"),
+    "Expected booking open label to reflect the custom open time.",
+  );
 
   expect(dashboard.schedule.rooms.length === 9, "Expected 9 rooms in the schedule.");
   expect(
@@ -299,7 +314,7 @@ try {
     });
   } catch (error) {
     futureCancelBlocked =
-      error.message === "예약과 취소는 목요일 10시부터 일요일 자정까지만 가능합니다.";
+      error.message === "4월 2일 (목) 09:30부터 일요일 자정까지만 예약과 취소가 가능합니다.";
   }
 
   expect(

@@ -138,6 +138,40 @@
           <p class="section-guide">저장한 설정은 같은 타임의 다음 주일에도 이어집니다.</p>
         </div>
 
+        <form method="post" action="/admin/settings/booking-open" class="settings-room-meta-form">
+          <input type="hidden" name="date" value="<%= selectedDate %>" />
+
+          <div class="selection-banner compact-banner">
+            <strong>예약 시작 시간</strong>
+            <span>주일 기준 3일 전(목요일)에 열리는 시간을 운영자가 직접 바꿀 수 있습니다.</span>
+          </div>
+
+          <div class="room-meta-grid">
+            <article class="room-meta-card room-meta-card-accent">
+              <div class="room-meta-card-head">
+                <div>
+                  <strong>현재 오픈 시각</strong>
+                  <small><%= bookingOpenAtLabel %> 기준으로 공개 화면에 표시됩니다.</small>
+                </div>
+              </div>
+
+              <label class="field room-meta-field">
+                <span>오픈 시간</span>
+                <input
+                  type="time"
+                  name="bookingOpenTime"
+                  value="<%= bookingOpenTime %>"
+                  required
+                />
+              </label>
+            </article>
+          </div>
+
+          <div class="page-actions compact-actions">
+            <button type="submit" class="primary-button">예약 시작 시간 저장</button>
+          </div>
+        </form>
+
         <form method="post" action="/admin/settings/rooms" class="settings-room-meta-form">
           <input type="hidden" name="date" value="<%= selectedDate %>" />
 

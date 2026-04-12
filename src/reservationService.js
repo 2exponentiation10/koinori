@@ -5,6 +5,7 @@ const { APP_TIME_ZONE, MIN_ATTENDEES, ROOMS, ROOM_MODES, TIME_SLOTS } = require(
 
 const slotById = new Map(TIME_SLOTS.map((slot) => [slot.id, slot]));
 const roomById = new Map(ROOMS.map((room) => [room.id, room]));
+const DEFAULT_BOOKING_OPEN_TIME = "10:00";
 
 function toDigits(value) {
   return String(value || "").replace(/\D/g, "");
@@ -22,6 +23,40 @@ function getContactLastFour(contact) {
 
 function getNow() {
   return DateTime.now().setZone(APP_TIME_ZONE).setLocale("ko");
+}
+
+function parseBookingOpenTime(rawValue) {
+  const value = String(rawValue || "").trim() || DEFAULT_BOOKING_OPEN_TIME;
+  const match = value.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+
+  if (!match) {
+    return {
+      value: DEFAULT_BOOKING_OPEN_TIME,
+      hour: 10,
+      minute: 0,
+    };
+  }
+
+  return {
+    value,
+    hour: Number.parseInt(match[1], 10),
+    minute: Number.parseInt(match[2], 10),
+  };
+}
+
+function sanitizeBookingOpenTimeInput(rawValue) {
+  const value = String(rawValue || "").trim();
+
+  if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(value)) {
+    throw new Error("예약 시작 시간은 HH:MM 형식으로 입력해 주세요.");
+  }
+
+  return parseBookingOpenTime(value);
+}
+
+function getBookingOpenSetting() {
+  const row = db.prepare("SELECT value FROM app_settings WHERE key = 'booking_open_time' LIMIT 1").get();
+  return parseBookingOpenTime(row?.value);
 }
 
 function getDefaultSunday(reference = getNow()) {
@@ -64,9 +99,11 @@ function parseSundayDate(input) {
 }
 
 function getBookingOpenAt(sundayDate) {
+  const openSetting = getBookingOpenSetting();
+
   return sundayDate
     .minus({ days: 3 })
-    .set({ hour: 10, minute: 0, second: 0, millisecond: 0 })
+    .set({ hour: openSetting.hour, minute: openSetting.minute, second: 0, millisecond: 0 })
     .setLocale("ko");
 }
 
@@ -926,7 +963,7 @@ const cancelReservationByLookupTx = db.transaction((input) => {
   const bookingStatus = getBookingStatus(reservationDate, getNow());
 
   if (!bookingStatus.open) {
-    throw new Error("예약과 취소는 목요일 10시부터 일요일 자정까지만 가능합니다.");
+    throw new Error(`${getBookingOpenAt(reservationDate).toFormat("M월 d일 (ccc) HH:mm")}부터 일요일 자정까지만 예약과 취소가 가능합니다.`);
   }
 
   return cancelReservationTx(sanitized.reservationId);
@@ -1145,9 +1182,32 @@ function updateRoomMetadata(input) {
   return updateRoomMetadataTx(input);
 }
 
+const updateBookingOpenTimeTx = db.transaction((input) => {
+  const bookingOpenTime = sanitizeBookingOpenTimeInput(input.bookingOpenTime);
+  const now = getNow().toISO();
+
+  db.prepare(
+    `
+      INSERT INTO app_settings (key, value, updated_at)
+      VALUES ('booking_open_time', ?, ?)
+      ON CONFLICT(key)
+      DO UPDATE SET
+        value = excluded.value,
+        updated_at = excluded.updated_at
+    `,
+  ).run(bookingOpenTime.value, now);
+
+  return bookingOpenTime;
+});
+
+function updateBookingOpenTime(input) {
+  return updateBookingOpenTimeTx(input);
+}
+
 function buildDashboard(dateInput) {
   const now = getNow();
   const selectedDate = normalizeDate(dateInput, now);
+  const bookingOpenTime = getBookingOpenSetting();
   const bookingOpenAt = getBookingOpenAt(selectedDate);
   const bookingCloseAt = getBookingCloseAt(selectedDate);
   const schedule = buildSchedule(selectedDate.toISODate());
@@ -1159,6 +1219,7 @@ function buildDashboard(dateInput) {
     currentTimeIso: now.toISO(),
     selectedDate: selectedDate.toISODate(),
     selectedDateLabel: selectedDate.toFormat("M월 d일 (ccc)"),
+    bookingOpenTime: bookingOpenTime.value,
     bookingOpenAtLabel: bookingOpenAt.toFormat("M월 d일 (ccc) HH:mm"),
     bookingOpenAtIso: bookingOpenAt.toISO(),
     bookingCloseAtIso: bookingCloseAt.toISO(),
@@ -1182,6 +1243,7 @@ module.exports = {
   cancelReservationByLookup,
   createReservation,
   formatSlot,
+  updateBookingOpenTime,
   updateRoomMetadata,
   updateRoomSlotSettings,
 };

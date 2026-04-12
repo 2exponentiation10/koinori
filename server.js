@@ -11,6 +11,7 @@ const {
   cancelReservation,
   cancelReservationByLookup,
   createReservation,
+  updateBookingOpenTime,
   updateRoomMetadata,
   updateRoomSlotSettings,
 } = require("./src/reservationService");
@@ -636,6 +637,33 @@ app.post("/admin/settings/rooms", requireAdmin, (req, res) => {
     renderAdminPage(req, res, {
       statusCode: 400,
       message: error.message || "방 정보 저장 중 오류가 발생했습니다.",
+      level: "error",
+      date: req.body.date,
+      page: "settings",
+    });
+  }
+});
+
+app.post("/admin/settings/booking-open", requireAdmin, (req, res) => {
+  try {
+    const result = updateBookingOpenTime({
+      bookingOpenTime: req.body.bookingOpenTime,
+    });
+
+    redirectWithFlash(
+      res,
+      "/admin",
+      {
+        date: req.body.date,
+        page: "settings",
+      },
+      `예약 시작 시간을 ${result.value}로 저장했습니다.`,
+      "success",
+    );
+  } catch (error) {
+    renderAdminPage(req, res, {
+      statusCode: 400,
+      message: error.message || "예약 시작 시간 저장 중 오류가 발생했습니다.",
       level: "error",
       date: req.body.date,
       page: "settings",

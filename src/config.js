@@ -9,8 +9,8 @@ const ROOM_MODES = {
 const NOTICE_ITEMS = [
   {
     id: "booking-open",
-    title: "목요일 오전 10시 오픈",
-    detail: "오픈 전에는 예약 버튼이 잠겨 있습니다.",
+    title: "목요일 예약 오픈",
+    detail: "오픈 전에는 예약 버튼이 잠겨 있습니다. 정확한 시간은 상단 안내를 확인해 주세요.",
     screens: ["intro"],
   },
   {

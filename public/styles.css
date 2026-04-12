@@ -439,6 +439,13 @@ button {
 
 .page-tabs {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  position: sticky;
+  top: 8px;
+  z-index: 5;
+  padding: 6px;
+  border-radius: 18px;
+  background: rgba(251, 247, 240, 0.92);
+  backdrop-filter: blur(8px);
 }
 
 .workflow-tabs {
@@ -1038,6 +1045,11 @@ button {
   padding: 14px;
   display: grid;
   gap: 12px;
+}
+
+.room-meta-card-accent {
+  background: rgba(220, 233, 228, 0.66);
+  border-color: rgba(23, 63, 54, 0.12);
 }
 
 .room-meta-card-head {
