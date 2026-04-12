@@ -188,8 +188,8 @@ function buildRoomCatalog() {
       : Number.isInteger(room.defaultCapacity)
         ? room.defaultCapacity
         : null;
-    const description = String(metadata?.description || "").trim();
-    const imageUrl = String(metadata?.image_url || "").trim();
+    const description = String(metadata?.description || room.defaultDescription || "").trim();
+    const imageUrl = String(metadata?.image_url || room.defaultImageUrl || "").trim();
 
     return {
       ...room,

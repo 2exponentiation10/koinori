@@ -29,15 +29,69 @@ const NOTICE_ITEMS = [
 ];
 
 const ROOMS = [
-  { id: 1, name: "1번 사랑방", defaultCapacity: null },
-  { id: 2, name: "2번 희락방", defaultCapacity: null },
-  { id: 3, name: "3번 화평방", defaultCapacity: null },
-  { id: 4, name: "4번 오래참음방", defaultCapacity: null },
-  { id: 5, name: "5번 자비방", defaultCapacity: null },
-  { id: 6, name: "6번 양선방", defaultCapacity: null },
-  { id: 7, name: "7번 충성방", defaultCapacity: null },
-  { id: 8, name: "8번 온유방", defaultCapacity: null },
-  { id: 9, name: "9번 겨울방", defaultCapacity: null },
+  {
+    id: 1,
+    name: "1번 사랑방",
+    defaultCapacity: null,
+    defaultDescription: "소그룹 나눔과 짧은 상담에 적합한 아늑한 방입니다.",
+    defaultImageUrl: "https://picsum.photos/seed/koinori-room-1/1200/800",
+  },
+  {
+    id: 2,
+    name: "2번 희락방",
+    defaultCapacity: null,
+    defaultDescription: "교제와 간단한 모임을 운영하기 좋은 밝은 분위기의 방입니다.",
+    defaultImageUrl: "https://picsum.photos/seed/koinori-room-2/1200/800",
+  },
+  {
+    id: 3,
+    name: "3번 화평방",
+    defaultCapacity: null,
+    defaultDescription: "팀 미팅이나 성경공부처럼 집중이 필요한 모임에 잘 맞습니다.",
+    defaultImageUrl: "https://picsum.photos/seed/koinori-room-3/1200/800",
+  },
+  {
+    id: 4,
+    name: "4번 오래참음방",
+    defaultCapacity: null,
+    defaultDescription: "조용한 대화와 정돈된 모임 운영에 적합한 중형 방입니다.",
+    defaultImageUrl: "https://picsum.photos/seed/koinori-room-4/1200/800",
+  },
+  {
+    id: 5,
+    name: "5번 자비방",
+    defaultCapacity: null,
+    defaultDescription: "상담, 기도 모임, 소규모 리더 모임에 어울리는 방입니다.",
+    defaultImageUrl: "https://picsum.photos/seed/koinori-room-5/1200/800",
+  },
+  {
+    id: 6,
+    name: "6번 양선방",
+    defaultCapacity: null,
+    defaultDescription: "식사 후 교제나 짧은 회의를 진행하기 좋은 편안한 방입니다.",
+    defaultImageUrl: "https://picsum.photos/seed/koinori-room-6/1200/800",
+  },
+  {
+    id: 7,
+    name: "7번 충성방",
+    defaultCapacity: null,
+    defaultDescription: "중간 규모 모임을 안정적으로 수용할 수 있는 방입니다.",
+    defaultImageUrl: "https://picsum.photos/seed/koinori-room-7/1200/800",
+  },
+  {
+    id: 8,
+    name: "8번 온유방",
+    defaultCapacity: null,
+    defaultDescription: "조용하고 차분한 흐름이 필요한 모임에 적합한 방입니다.",
+    defaultImageUrl: "https://picsum.photos/seed/koinori-room-8/1200/800",
+  },
+  {
+    id: 9,
+    name: "9번 겨울방",
+    defaultCapacity: null,
+    defaultDescription: "여유 있는 배치가 가능한 넓은 방으로 공동체 모임에 적합합니다.",
+    defaultImageUrl: "https://picsum.photos/seed/koinori-room-9/1200/800",
+  },
 ];
 
 const TIME_SLOTS = [
