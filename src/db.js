@@ -53,8 +53,26 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS room_metadata (
     room_id INTEGER PRIMARY KEY,
     capacity INTEGER,
+    description TEXT DEFAULT '',
+    image_url TEXT DEFAULT '',
     updated_at TEXT NOT NULL
   );
 `);
+
+function ensureColumn(tableName, columnName, definition) {
+  const columns = db
+    .prepare(`PRAGMA table_info(${tableName})`)
+    .all()
+    .map((column) => column.name);
+
+  if (columns.includes(columnName)) {
+    return;
+  }
+
+  db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+}
+
+ensureColumn("room_metadata", "description", "TEXT DEFAULT ''");
+ensureColumn("room_metadata", "image_url", "TEXT DEFAULT ''");
 
 module.exports = db;

@@ -285,6 +285,35 @@ function formatRoomTitle(room) {
   return room.capacity ? `${room.name} · ${room.capacity}인실` : room.name;
 }
 
+function getRoomDescription(room) {
+  if (!room || !room.description) {
+    return "모임 성격에 맞는 방을 선택한 뒤 시간별 상태를 확인하세요.";
+  }
+
+  return room.description;
+}
+
+function renderRoomVisual(room, className) {
+  if (room?.imageUrl) {
+    return (
+      <img
+        src={room.imageUrl}
+        alt={`${room.name} 안내 사진`}
+        className={className}
+        loading="lazy"
+        referrerPolicy="no-referrer"
+      />
+    );
+  }
+
+  return (
+    <div className={`${className} room-visual-placeholder`} aria-hidden="true">
+      <strong>{room?.name || "ROOM"}</strong>
+      <span>{room?.capacity ? `${room.capacity}인실` : "방 안내 준비 중"}</span>
+    </div>
+  );
+}
+
 function buildNavigationSnapshot({
   screen,
   selectedRoomId,
@@ -805,10 +834,12 @@ function App({ initialState }) {
         onClick={() => selectRoom(room.id)}
         disabled={disabled}
       >
+        {renderRoomVisual(room, "room-pick-media")}
         <span className="room-pick-head">
           <strong>{formatRoomTitle(room)}</strong>
           <small className={`room-pick-badge room-pick-badge-${metrics.state}`}>{metrics.badge}</small>
         </span>
+        <span className="room-pick-description">{getRoomDescription(room)}</span>
         {metrics.openCount > 0 || metrics.waitCount > 0 ? (
           <span className="room-pick-summary" aria-label={`${room.name} 예약 요약`}>
             {metrics.openCount > 0 ? (
@@ -890,6 +921,9 @@ function App({ initialState }) {
           <span>예약번호 {recentAction.reservationNumber}</span>
           {recentAction.contactLastFour ? <span>취소 확인 {recentAction.contactLastFour}</span> : null}
         </div>
+        <p className="activity-help">
+          예약 현황에서 같은 방의 다른 타임 상태를 확인할 수 있고, 예약 시간 전까지는 취소도 가능합니다.
+        </p>
       </article>
     );
   }
@@ -1071,6 +1105,16 @@ function App({ initialState }) {
             </span>
           </div>
 
+          {selectedRoom ? (
+            <article className="room-spotlight-card">
+              {renderRoomVisual(selectedRoom, "room-spotlight-media")}
+              <div className="room-spotlight-copy">
+                <strong>{formatRoomTitle(selectedRoom)}</strong>
+                <span>{getRoomDescription(selectedRoom)}</span>
+              </div>
+            </article>
+          ) : null}
+
           <section className="slot-section">
             <div className="slot-section-head">
               <strong>바로 예약 가능</strong>
@@ -1226,9 +1270,10 @@ function App({ initialState }) {
           {selectedRoom ? (
             <section className="board-room-panel is-active">
               <div className="selection-banner compact-banner">
-                <strong>{selectedRoom.name}</strong>
-                <span>시간별 상태를 큰 카드로 확인할 수 있습니다.</span>
+                <strong>{formatRoomTitle(selectedRoom)}</strong>
+                <span>{getRoomDescription(selectedRoom)}</span>
               </div>
+              {renderRoomVisual(selectedRoom, "status-room-media")}
               <div className="choice-grid">{selectedRoom.slots.map(renderStatusSlot)}</div>
             </section>
           ) : null}

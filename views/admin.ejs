@@ -143,24 +143,57 @@
 
           <div class="selection-banner compact-banner">
             <strong>방 기본 정보</strong>
-            <span>각 방이 몇 인실인지 입력해 두면 공개 화면과 관리자 화면에 함께 표시됩니다.</span>
+            <span>인실, 용도 설명, 사진 주소를 저장하면 공개 화면과 관리자 화면에 함께 표시됩니다.</span>
           </div>
 
           <div class="room-meta-grid">
             <% schedule.rooms.forEach((room) => { %>
-              <label class="field room-meta-field">
-                <span><%= room.name %></span>
-                <input
-                  type="number"
-                  min="1"
-                  max="99"
-                  name="capacity_<%= room.id %>"
-                  value="<%= room.capacity || '' %>"
-                  placeholder="예: 6"
-                  inputmode="numeric"
-                />
-                <small><%= room.capacity ? `${room.capacity}인실로 저장됨` : '인실 정보 미설정' %></small>
-              </label>
+              <article class="room-meta-card">
+                <div class="room-meta-card-head">
+                  <div>
+                    <strong><%= room.name %></strong>
+                    <small><%= room.capacity ? `${room.capacity}인실로 저장됨` : '인실 정보 미설정' %></small>
+                  </div>
+                  <% if (room.imageUrl) { %>
+                    <img src="<%= room.imageUrl %>" alt="<%= room.name %> 사진" class="room-meta-preview" referrerpolicy="no-referrer" />
+                  <% } else { %>
+                    <div class="room-meta-preview room-meta-preview-empty">사진 없음</div>
+                  <% } %>
+                </div>
+
+                <label class="field room-meta-field">
+                  <span>몇 인실</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="99"
+                    name="capacity_<%= room.id %>"
+                    value="<%= room.capacity || '' %>"
+                    placeholder="예: 6"
+                    inputmode="numeric"
+                  />
+                </label>
+
+                <label class="field room-meta-field room-meta-field-wide">
+                  <span>방 설명</span>
+                  <textarea
+                    name="description_<%= room.id %>"
+                    rows="3"
+                    placeholder="예: 소그룹 모임, 조용한 상담, 식사 후 교제에 적합"
+                  ><%= room.description || '' %></textarea>
+                </label>
+
+                <label class="field room-meta-field room-meta-field-wide">
+                  <span>사진 URL</span>
+                  <input
+                    type="url"
+                    name="imageUrl_<%= room.id %>"
+                    value="<%= room.imageUrl || '' %>"
+                    placeholder="https://..."
+                    inputmode="url"
+                  />
+                </label>
+              </article>
             <% }) %>
           </div>
 

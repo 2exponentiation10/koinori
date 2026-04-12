@@ -46,6 +46,8 @@ function buildPublicRooms(schedule) {
     id: room.id,
     name: room.name,
     capacity: room.capacity ?? null,
+    description: room.description || "",
+    imageUrl: room.imageUrl || "",
     slots: room.slots.map((slot) => ({
       slotId: slot.slot.id,
       label: slot.slot.label,

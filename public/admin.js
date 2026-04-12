@@ -42,7 +42,49 @@ function initAdminPage(adminState) {
     return;
   }
 
-  function activateSettingSlot(slotId) {
+  let activePage = adminState.initialPage || "summary";
+  let activeSettingSlotId = Number(adminState.initialSettingSlotId);
+  let historyReady = false;
+  let historyRestoring = false;
+
+  function buildAdminUrl(pageName, slotId) {
+    const url = new URL(window.location.href);
+    url.searchParams.set("page", pageName);
+
+    if (slotId) {
+      url.searchParams.set("settingSlot", String(slotId));
+    } else {
+      url.searchParams.delete("settingSlot");
+    }
+
+    return `${url.pathname}?${url.searchParams.toString()}`;
+  }
+
+  function syncHistory(mode = "push") {
+    const state = {
+      app: "koinori-admin",
+      page: activePage,
+      settingSlotId: activeSettingSlotId,
+    };
+    const url = buildAdminUrl(activePage, activePage === "settings" ? activeSettingSlotId : null);
+
+    if (!historyReady || mode === "replace") {
+      window.history.replaceState(state, "", url);
+      historyReady = true;
+      return;
+    }
+
+    if (historyRestoring) {
+      historyRestoring = false;
+      return;
+    }
+
+    window.history.pushState(state, "", url);
+  }
+
+  function activateSettingSlot(slotId, options = {}) {
+    activeSettingSlotId = Number(slotId);
+
     settingTabs.forEach((tab) => {
       tab.classList.toggle("is-active", Number(tab.dataset.settingSlotTab) === Number(slotId));
     });
@@ -50,6 +92,10 @@ function initAdminPage(adminState) {
     settingPanels.forEach((panel) => {
       panel.classList.toggle("is-active", Number(panel.dataset.settingSlot) === Number(slotId));
     });
+
+    if (options.history !== false && activePage === "settings") {
+      syncHistory(options.historyMode || "push");
+    }
   }
 
   function updateModePill(input) {
@@ -79,13 +125,15 @@ function initAdminPage(adminState) {
 
   pageButtons.forEach((button) => {
     button.addEventListener("click", () => {
-      setActivePage(button.dataset.goPage);
+      activePage = button.dataset.goPage;
+      setActivePage(activePage);
+      syncHistory("push");
     });
   });
 
   settingTabs.forEach((button) => {
     button.addEventListener("click", () => {
-      activateSettingSlot(button.dataset.settingSlotTab);
+      activateSettingSlot(button.dataset.settingSlotTab, { historyMode: "push" });
     });
   });
 
@@ -120,7 +168,21 @@ function initAdminPage(adminState) {
     });
   });
 
-  setActivePage(adminState.initialPage || "summary", { scroll: false });
+  window.addEventListener("popstate", (event) => {
+    const state = event.state;
+
+    if (!state || state.app !== "koinori-admin") {
+      return;
+    }
+
+    historyRestoring = true;
+    activePage = state.page || "summary";
+    activeSettingSlotId = Number(state.settingSlotId || adminState.initialSettingSlotId);
+    setActivePage(activePage, { scroll: false });
+    activateSettingSlot(activeSettingSlotId, { scroll: false, history: false });
+  });
+
+  setActivePage(activePage, { scroll: false });
 
   const initialSettingTab =
     settingTabs.find(
@@ -128,8 +190,10 @@ function initAdminPage(adminState) {
     ) || settingTabs[0];
 
   if (initialSettingTab) {
-    activateSettingSlot(initialSettingTab.dataset.settingSlotTab);
+    activateSettingSlot(initialSettingTab.dataset.settingSlotTab, { history: false });
   }
+
+  syncHistory("replace");
 }
 
 document.addEventListener("DOMContentLoaded", () => {

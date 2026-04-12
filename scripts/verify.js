@@ -38,9 +38,14 @@ cleanup();
 try {
   updateRoomMetadata({
     rooms: [
-      { roomId: 1, capacity: 6 },
-      { roomId: 2, capacity: 4 },
-      { roomId: 3, capacity: 8 },
+      {
+        roomId: 1,
+        capacity: 6,
+        description: "예배 전후 소그룹 모임에 적합한 방",
+        imageUrl: "https://example.com/room-1.jpg",
+      },
+      { roomId: 2, capacity: 4, description: "조용한 대화용 방" },
+      { roomId: 3, capacity: 8, description: "팀 미팅용 넓은 방" },
     ],
   });
 
@@ -51,6 +56,14 @@ try {
   expect(
     dashboard.schedule.rooms.find((room) => room.id === 1)?.capacity === 6,
     "Expected room metadata to expose capacity.",
+  );
+  expect(
+    dashboard.schedule.rooms.find((room) => room.id === 1)?.description === "예배 전후 소그룹 모임에 적합한 방",
+    "Expected room metadata to expose description.",
+  );
+  expect(
+    dashboard.schedule.rooms.find((room) => room.id === 1)?.imageUrl === "https://example.com/room-1.jpg",
+    "Expected room metadata to expose image URL.",
   );
   expect(slotTwo && slotTwo.remainingRooms === 9, "Expected 2타임 to start with 9 open rooms.");
 

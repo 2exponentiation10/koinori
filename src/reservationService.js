@@ -170,7 +170,7 @@ function listRoomMetadata() {
   return db
     .prepare(
       `
-        SELECT room_id, capacity
+        SELECT room_id, capacity, description, image_url
         FROM room_metadata
         ORDER BY room_id ASC
       `,
@@ -188,10 +188,14 @@ function buildRoomCatalog() {
       : Number.isInteger(room.defaultCapacity)
         ? room.defaultCapacity
         : null;
+    const description = String(metadata?.description || "").trim();
+    const imageUrl = String(metadata?.image_url || "").trim();
 
     return {
       ...room,
       capacity,
+      description,
+      imageUrl,
     };
   });
 }
@@ -986,6 +990,8 @@ function sanitizeRoomMetadataInput(input) {
     const room = roomById.get(roomId);
     const rawCapacity = String(entry.capacity ?? "").trim();
     const capacity = rawCapacity === "" ? null : Number.parseInt(rawCapacity, 10);
+    const description = String(entry.description || "").trim();
+    const imageUrl = String(entry.imageUrl || entry.image_url || "").trim();
 
     if (!room) {
       throw new Error("방 정보를 다시 확인해 주세요.");
@@ -995,9 +1001,19 @@ function sanitizeRoomMetadataInput(input) {
       throw new Error(`${room.name} 인실 정보는 1~99 사이 숫자로 입력해 주세요.`);
     }
 
+    if (description.length > 240) {
+      throw new Error(`${room.name} 설명은 240자 이하로 입력해 주세요.`);
+    }
+
+    if (imageUrl && !/^https?:\/\//i.test(imageUrl)) {
+      throw new Error(`${room.name} 사진 주소는 http 또는 https로 시작해야 합니다.`);
+    }
+
     return {
       roomId,
       capacity,
+      description,
+      imageUrl,
     };
   });
 }
@@ -1012,15 +1028,19 @@ const updateRoomMetadataTx = db.transaction((input) => {
         INSERT INTO room_metadata (
           room_id,
           capacity,
+          description,
+          image_url,
           updated_at
         )
-        VALUES (?, ?, ?)
+        VALUES (?, ?, ?, ?, ?)
         ON CONFLICT(room_id)
         DO UPDATE SET
           capacity = excluded.capacity,
+          description = excluded.description,
+          image_url = excluded.image_url,
           updated_at = excluded.updated_at
       `,
-    ).run(setting.roomId, setting.capacity, now);
+    ).run(setting.roomId, setting.capacity, setting.description, setting.imageUrl, now);
   });
 
   return buildRoomCatalog();

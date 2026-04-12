@@ -44,7 +44,7 @@ app.use(
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'"],
         styleSrc: ["'self'"],
-        imgSrc: ["'self'", "data:"],
+        imgSrc: ["'self'", "data:", "https:"],
         connectSrc: ["'self'"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
@@ -616,6 +616,8 @@ app.post("/admin/settings/rooms", requireAdmin, (req, res) => {
       .map((key) => ({
         roomId: key.slice("capacity_".length),
         capacity: req.body[key],
+        description: req.body[`description_${key.slice("capacity_".length)}`],
+        imageUrl: req.body[`imageUrl_${key.slice("capacity_".length)}`],
       }));
 
     updateRoomMetadata({ rooms });
