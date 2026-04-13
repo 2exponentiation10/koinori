@@ -3,4 +3,5 @@ dist
 .env
 data/*.db
 data/*.db-*
+data/uploads/
 npm-debug.log*

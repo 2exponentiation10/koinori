@@ -1,13 +1,15 @@
 const { Settings } = require("luxon");
 
-const db = require("../src/db");
+const { db } = require("../src/db");
 const { buildPublicAppState } = require("../src/publicAppState");
 const {
   buildDashboard,
   cancelReservation,
   cancelReservationByLookup,
+  createRoom,
   createReservation,
-  updateBookingOpenTime,
+  deleteRoom,
+  updateBookingPolicy,
   updateRoomMetadata,
   updateRoomSlotSettings,
 } = require("../src/reservationService");
@@ -25,8 +27,9 @@ function expect(condition, message) {
 }
 
 function cleanup() {
-  db.prepare("DELETE FROM app_settings WHERE key = 'booking_open_time'").run();
+  db.prepare("DELETE FROM app_settings WHERE key IN ('booking_open_time', 'booking_open_day', 'booking_restriction_enabled')").run();
   db.prepare("DELETE FROM room_metadata").run();
+  db.prepare("DELETE FROM rooms WHERE name IN ('테스트 추가방', '삭제 테스트방')").run();
   db.prepare("DELETE FROM reservations WHERE reservation_date = ?").run(TEST_DATE);
   db.prepare("DELETE FROM room_slot_settings WHERE reservation_date = ?").run(TEST_DATE);
   db.prepare("DELETE FROM reservations WHERE reservation_date = ?").run(FUTURE_DATE);
@@ -38,7 +41,9 @@ function cleanup() {
 cleanup();
 
 try {
-  updateBookingOpenTime({
+  updateBookingPolicy({
+    bookingRestrictionEnabled: "1",
+    bookingOpenDay: "4",
     bookingOpenTime: "09:30",
   });
 
@@ -46,13 +51,27 @@ try {
     rooms: [
       {
         roomId: 1,
+        name: "1번 사랑방 리뉴얼",
         capacity: 6,
         description: "예배 전후 소그룹 모임에 적합한 방",
         imageUrl: "https://example.com/room-1.jpg",
       },
-      { roomId: 2, capacity: 4, description: "조용한 대화용 방" },
-      { roomId: 3, capacity: 8, description: "팀 미팅용 넓은 방" },
+      { roomId: 2, name: "2번 희락방", capacity: 4, description: "조용한 대화용 방" },
+      { roomId: 3, name: "3번 화평방", capacity: 8, description: "팀 미팅용 넓은 방" },
+      { roomId: 4, name: "4번 오래참음방", capacity: "", description: "" },
+      { roomId: 5, name: "5번 자비방", capacity: "", description: "" },
+      { roomId: 6, name: "6번 양선방", capacity: "", description: "" },
+      { roomId: 7, name: "7번 충성방", capacity: "", description: "" },
+      { roomId: 8, name: "8번 온유방", capacity: "", description: "" },
+      { roomId: 9, name: "9번 겨울방", capacity: "", description: "" },
     ],
+  });
+
+  const createdRoom = createRoom({
+    name: "테스트 추가방",
+    capacity: 5,
+    description: "추가 방 검증용",
+    imageUrl: "https://example.com/new-room.jpg",
   });
 
   let dashboard = buildDashboard(TEST_DATE);
@@ -63,14 +82,22 @@ try {
     "Expected dashboard to expose custom booking open time.",
   );
   expect(
+    dashboard.bookingOpenDay === 4,
+    "Expected dashboard to expose custom booking open weekday.",
+  );
+  expect(
     dashboard.bookingOpenAtLabel.includes("09:30"),
     "Expected booking open label to reflect the custom open time.",
   );
 
-  expect(dashboard.schedule.rooms.length === 9, "Expected 9 rooms in the schedule.");
+  expect(dashboard.schedule.rooms.length === 10, "Expected 10 rooms in the schedule after room creation.");
   expect(
     dashboard.schedule.rooms.find((room) => room.id === 1)?.capacity === 6,
     "Expected room metadata to expose capacity.",
+  );
+  expect(
+    dashboard.schedule.rooms.find((room) => room.id === 1)?.name === "1번 사랑방 리뉴얼",
+    "Expected room metadata to expose updated room name.",
   );
   expect(
     dashboard.schedule.rooms.find((room) => room.id === 1)?.description === "예배 전후 소그룹 모임에 적합한 방",
@@ -80,28 +107,26 @@ try {
     dashboard.schedule.rooms.find((room) => room.id === 1)?.imageUrl === "https://example.com/room-1.jpg",
     "Expected room metadata to expose image URL.",
   );
-  expect(slotTwo && slotTwo.remainingRooms === 9, "Expected 2타임 to start with 9 open rooms.");
+  expect(
+    dashboard.schedule.rooms.find((room) => room.id === createdRoom.id)?.capacity === 5,
+    "Expected created room metadata to be exposed in the dashboard.",
+  );
+  expect(slotTwo && slotTwo.remainingRooms === 10, "Expected 2타임 to start with 10 open rooms.");
 
   updateRoomSlotSettings({
     reservationDate: TEST_DATE,
     slotId: 2,
-    settings: [
-      { roomId: 1, mode: "fixed", label: "비전연구소" },
-      { roomId: 2, mode: "closed", label: "" },
-      { roomId: 3, mode: "available", label: "" },
-      { roomId: 4, mode: "available", label: "" },
-      { roomId: 5, mode: "available", label: "" },
-      { roomId: 6, mode: "available", label: "" },
-      { roomId: 7, mode: "available", label: "" },
-      { roomId: 8, mode: "available", label: "" },
-      { roomId: 9, mode: "available", label: "" },
-    ],
+    settings: dashboard.schedule.rooms.map((room) => ({
+      roomId: room.id,
+      mode: room.id === 1 ? "fixed" : room.id === 2 ? "closed" : "available",
+      label: room.id === 1 ? "비전연구소" : "",
+    })),
   });
 
   dashboard = buildDashboard(TEST_DATE);
   slotTwo = dashboard.slotDetails.find((slot) => slot.id === 2);
 
-  expect(slotTwo && slotTwo.reservableRoomCount === 7, "Expected 2타임 to expose 7 reservable rooms.");
+  expect(slotTwo && slotTwo.reservableRoomCount === 8, "Expected 2타임 to expose 8 reservable rooms.");
   expect(
     slotTwo && slotTwo.rooms.find((room) => room.roomId === 3 && room.actionType === "reserve"),
     "Expected room 3 in 2타임 to be reservable.",
@@ -122,8 +147,8 @@ try {
   updateRoomSlotSettings({
     reservationDate: FUTURE_DATE,
     slotId: 2,
-    settings: Array.from({ length: 9 }, (_, index) => ({
-      roomId: index + 1,
+    settings: futureDashboard.schedule.rooms.map((room) => ({
+      roomId: room.id,
       mode: "available",
       label: "",
     })),
@@ -320,6 +345,33 @@ try {
   expect(
     futureCancelBlocked,
     "Expected public cancellation to stay blocked before the next booking window opens.",
+  );
+
+  updateBookingPolicy({
+    bookingRestrictionEnabled: "0",
+    bookingOpenDay: "2",
+    bookingOpenTime: "08:15",
+  });
+
+  const unrestrictedState = buildPublicAppState({
+    dateInput: FUTURE_DATE,
+    initialScreen: "form",
+  });
+
+  expect(
+    unrestrictedState.initialScreen === "form",
+    "Expected booking form to stay open when restrictions are disabled.",
+  );
+  expect(
+    unrestrictedState.bookingStatus.open === true,
+    "Expected booking status to remain open when restrictions are disabled.",
+  );
+
+  const deletionResult = deleteRoom(createdRoom.id);
+
+  expect(
+    deletionResult.mode === "archived",
+    "Expected configured room with historical settings to be archived instead of deleted.",
   );
 
   console.log("Verification passed.");

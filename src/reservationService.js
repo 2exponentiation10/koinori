@@ -1,11 +1,20 @@
 const { DateTime } = require("luxon");
 
-const db = require("./db");
-const { APP_TIME_ZONE, MIN_ATTENDEES, ROOMS, ROOM_MODES, TIME_SLOTS } = require("./config");
+const { db } = require("./db");
+const { APP_TIME_ZONE, MIN_ATTENDEES, DEFAULT_ROOMS, ROOM_MODES, TIME_SLOTS } = require("./config");
 
 const slotById = new Map(TIME_SLOTS.map((slot) => [slot.id, slot]));
-const roomById = new Map(ROOMS.map((room) => [room.id, room]));
 const DEFAULT_BOOKING_OPEN_TIME = "10:00";
+const DEFAULT_BOOKING_OPEN_DAY = 4;
+const BOOKING_WEEKDAY_OPTIONS = [
+  { value: 1, label: "월요일" },
+  { value: 2, label: "화요일" },
+  { value: 3, label: "수요일" },
+  { value: 4, label: "목요일" },
+  { value: 5, label: "금요일" },
+  { value: 6, label: "토요일" },
+  { value: 7, label: "주일" },
+];
 
 function toDigits(value) {
   return String(value || "").replace(/\D/g, "");
@@ -23,6 +32,36 @@ function getContactLastFour(contact) {
 
 function getNow() {
   return DateTime.now().setZone(APP_TIME_ZONE).setLocale("ko");
+}
+
+function getDefaultRoomSeed(roomId) {
+  return DEFAULT_ROOMS.find((room) => room.id === Number(roomId)) || null;
+}
+
+function listRooms(options = {}) {
+  const includeInactive = Boolean(options.includeInactive);
+  const query = includeInactive
+    ? `
+        SELECT id, name, sort_order, is_active, capacity, description, image_url, created_at, updated_at
+        FROM rooms
+        ORDER BY sort_order ASC, id ASC
+      `
+    : `
+        SELECT id, name, sort_order, is_active, capacity, description, image_url, created_at, updated_at
+        FROM rooms
+        WHERE is_active = 1
+        ORDER BY sort_order ASC, id ASC
+      `;
+
+  return db.prepare(query).all();
+}
+
+function buildRoomLookup(options = {}) {
+  return new Map(listRooms({ includeInactive: true, ...options }).map((room) => [room.id, room]));
+}
+
+function getRoomById(roomId, options = {}) {
+  return buildRoomLookup(options).get(Number(roomId)) || null;
 }
 
 function parseBookingOpenTime(rawValue) {
@@ -44,6 +83,46 @@ function parseBookingOpenTime(rawValue) {
   };
 }
 
+function parseBookingOpenDay(rawValue) {
+  const parsed = Number.parseInt(rawValue, 10);
+
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 7) {
+    return {
+      value: DEFAULT_BOOKING_OPEN_DAY,
+      label:
+        BOOKING_WEEKDAY_OPTIONS.find((option) => option.value === DEFAULT_BOOKING_OPEN_DAY)?.label ||
+        "목요일",
+    };
+  }
+
+  return {
+    value: parsed,
+    label: BOOKING_WEEKDAY_OPTIONS.find((option) => option.value === parsed)?.label || "주일",
+  };
+}
+
+function sanitizeBookingPolicyInput(input = {}) {
+  const restrictionEnabled =
+    input.bookingRestrictionEnabled === true ||
+    input.bookingRestrictionEnabled === 1 ||
+    input.bookingRestrictionEnabled === "1" ||
+    input.bookingRestrictionEnabled === "true" ||
+    input.bookingRestrictionEnabled === "on";
+
+  const bookingOpenTime = String(input.bookingOpenTime || "").trim();
+  const bookingOpenDay = parseBookingOpenDay(input.bookingOpenDay);
+
+  if (restrictionEnabled && !/^([01]\d|2[0-3]):([0-5]\d)$/.test(bookingOpenTime)) {
+    throw new Error("예약 시작 시간은 HH:MM 형식으로 입력해 주세요.");
+  }
+
+  return {
+    restrictionEnabled,
+    bookingOpenDay,
+    bookingOpenTime: parseBookingOpenTime(bookingOpenTime),
+  };
+}
+
 function sanitizeBookingOpenTimeInput(rawValue) {
   const value = String(rawValue || "").trim();
 
@@ -54,9 +133,26 @@ function sanitizeBookingOpenTimeInput(rawValue) {
   return parseBookingOpenTime(value);
 }
 
-function getBookingOpenSetting() {
-  const row = db.prepare("SELECT value FROM app_settings WHERE key = 'booking_open_time' LIMIT 1").get();
-  return parseBookingOpenTime(row?.value);
+function getBookingPolicySetting() {
+  const settingRows = db
+    .prepare(
+      `
+        SELECT key, value
+        FROM app_settings
+        WHERE key IN ('booking_open_time', 'booking_open_day', 'booking_restriction_enabled')
+      `,
+    )
+    .all();
+  const settingMap = new Map(settingRows.map((row) => [row.key, row.value]));
+  const bookingOpenTime = parseBookingOpenTime(settingMap.get("booking_open_time"));
+  const bookingOpenDay = parseBookingOpenDay(settingMap.get("booking_open_day"));
+  const restrictionEnabled = settingMap.get("booking_restriction_enabled") !== "0";
+
+  return {
+    bookingOpenTime,
+    bookingOpenDay,
+    restrictionEnabled,
+  };
 }
 
 function getDefaultSunday(reference = getNow()) {
@@ -99,10 +195,12 @@ function parseSundayDate(input) {
 }
 
 function getBookingOpenAt(sundayDate) {
-  const openSetting = getBookingOpenSetting();
+  const bookingPolicy = getBookingPolicySetting();
+  const openSetting = bookingPolicy.bookingOpenTime;
+  const daysBeforeSunday = (7 - bookingPolicy.bookingOpenDay.value + 7) % 7;
 
   return sundayDate
-    .minus({ days: 3 })
+    .minus({ days: daysBeforeSunday })
     .set({ hour: openSetting.hour, minute: openSetting.minute, second: 0, millisecond: 0 })
     .setLocale("ko");
 }
@@ -113,6 +211,7 @@ function getBookingCloseAt(sundayDate) {
 
 function getBookingStatus(sundayDate, now = getNow()) {
   const today = now.startOf("day");
+  const bookingPolicy = getBookingPolicySetting();
 
   if (sundayDate.weekday !== 7) {
     return {
@@ -132,6 +231,14 @@ function getBookingStatus(sundayDate, now = getNow()) {
 
   const openAt = getBookingOpenAt(sundayDate);
   const closeAt = getBookingCloseAt(sundayDate);
+
+  if (!bookingPolicy.restrictionEnabled) {
+    return {
+      kind: "open",
+      open: true,
+      message: "운영자가 예약 제한을 해제했습니다. 지금 바로 예약하거나 수정할 수 있습니다.",
+    };
+  }
 
   if (now < openAt) {
     return {
@@ -178,14 +285,18 @@ function formatSlot(slotId) {
 
 function getSundayOptions(count = 6, now = getNow()) {
   const firstSunday = getDefaultSunday(now);
+  const bookingPolicy = getBookingPolicySetting();
 
   return Array.from({ length: count }, (_, index) => {
     const sundayDate = firstSunday.plus({ weeks: index }).setLocale("ko");
+    const openAt = getBookingOpenAt(sundayDate);
 
     return {
       date: sundayDate.toISODate(),
       label: sundayDate.toFormat("M월 d일 (ccc)"),
-      openAtLabel: getBookingOpenAt(sundayDate).toFormat("M월 d일 (ccc) HH:mm"),
+      openAtLabel: bookingPolicy.restrictionEnabled
+        ? openAt.toFormat("M월 d일 (ccc) HH:mm")
+        : "제한 없음",
     };
   });
 }
@@ -203,36 +314,24 @@ function getDefaultCellState(slot) {
   };
 }
 
-function listRoomMetadata() {
-  return db
-    .prepare(
-      `
-        SELECT room_id, capacity, description, image_url
-        FROM room_metadata
-        ORDER BY room_id ASC
-      `,
-    )
-    .all();
-}
-
-function buildRoomCatalog() {
-  const metadataMap = new Map(listRoomMetadata().map((row) => [row.room_id, row]));
-
-  return ROOMS.map((room) => {
-    const metadata = metadataMap.get(room.id);
-    const capacity = Number.isInteger(metadata?.capacity)
-      ? metadata.capacity
-      : Number.isInteger(room.defaultCapacity)
-        ? room.defaultCapacity
-        : null;
-    const description = String(metadata?.description || room.defaultDescription || "").trim();
-    const imageUrl = String(metadata?.image_url || room.defaultImageUrl || "").trim();
+function buildRoomCatalog(options = {}) {
+  return listRooms({ includeInactive: options.includeInactive }).map((room) => {
+    const fallbackSeed = getDefaultRoomSeed(room.id);
 
     return {
-      ...room,
-      capacity,
-      description,
-      imageUrl,
+      id: room.id,
+      name: room.name,
+      sortOrder: room.sort_order,
+      isActive: room.is_active === 1,
+      capacity: Number.isInteger(room.capacity)
+        ? room.capacity
+        : Number.isInteger(fallbackSeed?.defaultCapacity)
+          ? fallbackSeed.defaultCapacity
+          : null,
+      description: String(room.description || fallbackSeed?.defaultDescription || "").trim(),
+      imageUrl: String(room.image_url || fallbackSeed?.defaultImageUrl || "").trim(),
+      createdAt: room.created_at || "",
+      updatedAt: room.updated_at || "",
     };
   });
 }
@@ -301,7 +400,7 @@ function buildRoomSlotStateMap(dateIso) {
 }
 
 function decorateReservation(reservation) {
-  const room = reservation.room_id ? roomById.get(reservation.room_id) : null;
+  const room = reservation.room_id ? getRoomById(reservation.room_id, { includeInactive: true }) : null;
   const slot = slotById.get(reservation.slot_id);
   const createdAt = DateTime.fromISO(reservation.created_at, { zone: APP_TIME_ZONE }).setLocale("ko");
 
@@ -477,7 +576,7 @@ function promoteWaitlistForRoom(reservationDate, slotId, roomId, updatedAt) {
 function promoteWaitlistsForSlot(reservationDate, slotId, updatedAt) {
   const promotions = [];
 
-  ROOMS.forEach((room) => {
+  buildRoomCatalog().forEach((room) => {
     const promoted = promoteWaitlistForRoom(reservationDate, slotId, room.id, updatedAt);
 
     if (promoted) {
@@ -715,7 +814,9 @@ function sanitizeReservationInput(input, now = getNow()) {
     throw new Error("예약 타임을 선택해 주세요.");
   }
 
-  if (!Number.isInteger(roomId) || !roomById.has(roomId)) {
+  const selectedRoom = Number.isInteger(roomId) ? getRoomById(roomId) : null;
+
+  if (!selectedRoom) {
     throw new Error("방을 선택해 주세요.");
   }
 
@@ -736,7 +837,7 @@ function sanitizeReservationInput(input, now = getNow()) {
   return {
     reservationDate,
     slot,
-    roomId,
+    roomId: selectedRoom.id,
     attendees,
     communityName,
     requesterName,
@@ -777,7 +878,7 @@ const createReservationTx = db.transaction((input) => {
   }
 
   const isImmediatelyAvailable = !selectedRoomState.isOccupied;
-  const selectedRoom = roomById.get(sanitized.roomId);
+  const selectedRoom = getRoomById(sanitized.roomId);
   const timestamp = now.toISO();
   let status = isImmediatelyAvailable ? "confirmed" : "waitlisted";
 
@@ -989,7 +1090,7 @@ function sanitizeRoomSettingsInput(input) {
 
   const normalizedSettings = settings.map((entry) => {
     const roomId = Number.parseInt(entry.roomId, 10);
-    const room = roomById.get(roomId);
+    const room = getRoomById(roomId);
     const mode = String(entry.mode || "").trim();
 
     if (!room) {
@@ -1022,9 +1123,12 @@ function sanitizeRoomMetadataInput(input) {
     throw new Error("저장할 방 정보가 없습니다.");
   }
 
+  const seenNames = new Set();
+
   return rooms.map((entry) => {
     const roomId = Number.parseInt(entry.roomId, 10);
-    const room = roomById.get(roomId);
+    const room = getRoomById(roomId, { includeInactive: true });
+    const name = String(entry.name || "").trim();
     const rawCapacity = String(entry.capacity ?? "").trim();
     const capacity = rawCapacity === "" ? null : Number.parseInt(rawCapacity, 10);
     const description = String(entry.description || "").trim();
@@ -1038,21 +1142,81 @@ function sanitizeRoomMetadataInput(input) {
       throw new Error(`${room.name} 인실 정보는 1~99 사이 숫자로 입력해 주세요.`);
     }
 
+    if (!name) {
+      throw new Error("방 이름은 비워둘 수 없습니다.");
+    }
+
+    if (name.length > 40) {
+      throw new Error(`${room.name} 이름은 40자 이하로 입력해 주세요.`);
+    }
+
+    const normalizedName = name.toLowerCase();
+
+    if (seenNames.has(normalizedName)) {
+      throw new Error("같은 이름의 방을 두 번 저장할 수 없습니다.");
+    }
+
+    seenNames.add(normalizedName);
+
     if (description.length > 240) {
       throw new Error(`${room.name} 설명은 240자 이하로 입력해 주세요.`);
     }
 
-    if (imageUrl && !/^https?:\/\//i.test(imageUrl)) {
-      throw new Error(`${room.name} 사진 주소는 http 또는 https로 시작해야 합니다.`);
+    if (imageUrl && !/^(https?:\/\/|\/uploads\/)/i.test(imageUrl)) {
+      throw new Error(`${room.name} 사진 주소는 업로드 파일 또는 http/https 주소여야 합니다.`);
     }
 
     return {
       roomId,
+      name,
       capacity,
       description,
       imageUrl,
     };
   });
+}
+
+function sanitizeCreateRoomInput(input) {
+  const name = String(input.name || "").trim();
+  const rawCapacity = String(input.capacity ?? "").trim();
+  const capacity = rawCapacity === "" ? null : Number.parseInt(rawCapacity, 10);
+  const description = String(input.description || "").trim();
+  const imageUrl = String(input.imageUrl || "").trim();
+
+  if (!name) {
+    throw new Error("새 방 이름을 입력해 주세요.");
+  }
+
+  if (name.length > 40) {
+    throw new Error("방 이름은 40자 이하로 입력해 주세요.");
+  }
+
+  const existingRoom = listRooms({ includeInactive: true }).find(
+    (room) => room.name.trim().toLowerCase() === name.toLowerCase(),
+  );
+
+  if (existingRoom) {
+    throw new Error("같은 이름의 방이 이미 있습니다.");
+  }
+
+  if (capacity !== null && (!Number.isInteger(capacity) || capacity < 1 || capacity > 99)) {
+    throw new Error("인실 정보는 1~99 사이 숫자로 입력해 주세요.");
+  }
+
+  if (description.length > 240) {
+    throw new Error("방 설명은 240자 이하로 입력해 주세요.");
+  }
+
+  if (imageUrl && !/^(https?:\/\/|\/uploads\/)/i.test(imageUrl)) {
+    throw new Error("사진은 업로드 파일 또는 http/https 주소로 저장할 수 있습니다.");
+  }
+
+  return {
+    name,
+    capacity,
+    description,
+    imageUrl,
+  };
 }
 
 const updateRoomMetadataTx = db.transaction((input) => {
@@ -1062,25 +1226,44 @@ const updateRoomMetadataTx = db.transaction((input) => {
   settings.forEach((setting) => {
     db.prepare(
       `
-        INSERT INTO room_metadata (
-          room_id,
+        UPDATE rooms
+        SET name = ?,
+            capacity = ?,
+            description = ?,
+            image_url = ?,
+            updated_at = ?
+        WHERE id = ?
+      `,
+    ).run(setting.name, setting.capacity, setting.description, setting.imageUrl, now, setting.roomId);
+  });
+
+  return buildRoomCatalog({ includeInactive: true });
+});
+
+const createRoomTx = db.transaction((input) => {
+  const room = sanitizeCreateRoomInput(input);
+  const now = getNow().toISO();
+  const nextSortOrder =
+    db.prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM rooms").pluck().get() ?? 0;
+  const result = db
+    .prepare(
+      `
+        INSERT INTO rooms (
+          name,
+          sort_order,
+          is_active,
           capacity,
           description,
           image_url,
+          created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(room_id)
-        DO UPDATE SET
-          capacity = excluded.capacity,
-          description = excluded.description,
-          image_url = excluded.image_url,
-          updated_at = excluded.updated_at
+        VALUES (?, ?, 1, ?, ?, ?, ?, ?)
       `,
-    ).run(setting.roomId, setting.capacity, setting.description, setting.imageUrl, now);
-  });
+    )
+    .run(room.name, nextSortOrder, room.capacity, room.description, room.imageUrl, now, now);
 
-  return buildRoomCatalog();
+  return getRoomById(result.lastInsertRowid, { includeInactive: true });
 });
 
 const updateRoomSlotSettingsTx = db.transaction((input) => {
@@ -1182,32 +1365,104 @@ function updateRoomMetadata(input) {
   return updateRoomMetadataTx(input);
 }
 
-const updateBookingOpenTimeTx = db.transaction((input) => {
-  const bookingOpenTime = sanitizeBookingOpenTimeInput(input.bookingOpenTime);
+function createRoom(input) {
+  return createRoomTx(input);
+}
+
+const deleteRoomTx = db.transaction((roomIdInput) => {
+  const roomId = Number.parseInt(roomIdInput, 10);
+  const room = getRoomById(roomId, { includeInactive: true });
+
+  if (!room) {
+    throw new Error("삭제할 방을 찾을 수 없습니다.");
+  }
+
+  const activeReservations = db
+    .prepare(
+      `
+        SELECT COUNT(*)
+        FROM reservations
+        WHERE room_id = ?
+          AND status IN ('confirmed', 'waitlisted')
+      `,
+    )
+    .pluck()
+    .get(roomId);
+
+  const historicalReferences = db
+    .prepare(
+      `
+        SELECT
+          (SELECT COUNT(*) FROM reservations WHERE room_id = ?) +
+          (SELECT COUNT(*) FROM room_slot_settings WHERE room_id = ?)
+      `,
+    )
+    .pluck()
+    .get(roomId, roomId);
+
   const now = getNow().toISO();
 
-  db.prepare(
+  if (activeReservations > 0) {
+    throw new Error("현재 예약이나 대기가 남아 있는 방은 삭제할 수 없습니다. 먼저 예약을 정리해 주세요.");
+  }
+
+  if (historicalReferences > 0) {
+    db.prepare(
+      `
+        UPDATE rooms
+        SET is_active = 0,
+            updated_at = ?
+        WHERE id = ?
+      `,
+    ).run(now, roomId);
+
+    return {
+      mode: "archived",
+      room: getRoomById(roomId, { includeInactive: true }),
+    };
+  }
+
+  db.prepare("DELETE FROM rooms WHERE id = ?").run(roomId);
+
+  return {
+    mode: "deleted",
+    room,
+  };
+});
+
+function deleteRoom(roomId) {
+  return deleteRoomTx(roomId);
+}
+
+const updateBookingPolicyTx = db.transaction((input) => {
+  const bookingPolicy = sanitizeBookingPolicyInput(input);
+  const now = getNow().toISO();
+  const upsert = db.prepare(
     `
       INSERT INTO app_settings (key, value, updated_at)
-      VALUES ('booking_open_time', ?, ?)
+      VALUES (?, ?, ?)
       ON CONFLICT(key)
       DO UPDATE SET
         value = excluded.value,
         updated_at = excluded.updated_at
     `,
-  ).run(bookingOpenTime.value, now);
+  );
 
-  return bookingOpenTime;
+  upsert.run("booking_open_time", bookingPolicy.bookingOpenTime.value, now);
+  upsert.run("booking_open_day", String(bookingPolicy.bookingOpenDay.value), now);
+  upsert.run("booking_restriction_enabled", bookingPolicy.restrictionEnabled ? "1" : "0", now);
+
+  return bookingPolicy;
 });
 
-function updateBookingOpenTime(input) {
-  return updateBookingOpenTimeTx(input);
+function updateBookingPolicy(input) {
+  return updateBookingPolicyTx(input);
 }
 
 function buildDashboard(dateInput) {
   const now = getNow();
   const selectedDate = normalizeDate(dateInput, now);
-  const bookingOpenTime = getBookingOpenSetting();
+  const bookingPolicy = getBookingPolicySetting();
   const bookingOpenAt = getBookingOpenAt(selectedDate);
   const bookingCloseAt = getBookingCloseAt(selectedDate);
   const schedule = buildSchedule(selectedDate.toISODate());
@@ -1219,8 +1474,17 @@ function buildDashboard(dateInput) {
     currentTimeIso: now.toISO(),
     selectedDate: selectedDate.toISODate(),
     selectedDateLabel: selectedDate.toFormat("M월 d일 (ccc)"),
-    bookingOpenTime: bookingOpenTime.value,
-    bookingOpenAtLabel: bookingOpenAt.toFormat("M월 d일 (ccc) HH:mm"),
+    bookingOpenTime: bookingPolicy.bookingOpenTime.value,
+    bookingOpenDay: bookingPolicy.bookingOpenDay.value,
+    bookingOpenDayLabel: bookingPolicy.bookingOpenDay.label,
+    bookingRestrictionEnabled: bookingPolicy.restrictionEnabled,
+    bookingWeekdayOptions: BOOKING_WEEKDAY_OPTIONS.map((option) => ({
+      ...option,
+      selected: option.value === bookingPolicy.bookingOpenDay.value,
+    })),
+    bookingOpenAtLabel: bookingPolicy.restrictionEnabled
+      ? bookingOpenAt.toFormat("M월 d일 (ccc) HH:mm")
+      : "제한 없음",
     bookingOpenAtIso: bookingOpenAt.toISO(),
     bookingCloseAtIso: bookingCloseAt.toISO(),
     bookingStatus: getBookingStatus(selectedDate, now),
@@ -1241,9 +1505,12 @@ module.exports = {
   buildDashboard,
   cancelReservation,
   cancelReservationByLookup,
+  createRoom,
   createReservation,
+  deleteRoom,
   formatSlot,
-  updateBookingOpenTime,
+  updateBookingPolicy,
   updateRoomMetadata,
   updateRoomSlotSettings,
+  BOOKING_WEEKDAY_OPTIONS,
 };

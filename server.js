@@ -1,17 +1,22 @@
 const express = require("express");
+const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const compression = require("compression");
 const helmet = require("helmet");
+const multer = require("multer");
 
 const { MIN_ATTENDEES, NOTICE_ITEMS } = require("./src/config");
+const { dataDir } = require("./src/db");
 const { buildPublicAppState } = require("./src/publicAppState");
 const {
   buildDashboard,
   cancelReservation,
   cancelReservationByLookup,
+  createRoom,
   createReservation,
-  updateBookingOpenTime,
+  deleteRoom,
+  updateBookingPolicy,
   updateRoomMetadata,
   updateRoomSlotSettings,
 } = require("./src/reservationService");
@@ -29,6 +34,37 @@ const adminSessionSecret = configuredAdminKey;
 const adminSessionToken = adminSessionSecret
   ? crypto.createHash("sha256").update(`admin:${adminSessionSecret}`).digest("hex")
   : "";
+const uploadDir = path.join(dataDir, "uploads", "rooms");
+
+fs.mkdirSync(uploadDir, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => {
+    const extension = path.extname(file.originalname || "").toLowerCase() || ".jpg";
+    const safeExtension = [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(extension)
+      ? extension
+      : ".jpg";
+    const token = crypto.randomBytes(10).toString("hex");
+    cb(null, `room-${Date.now()}-${token}${safeExtension}`);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 8 * 1024 * 1024,
+    files: 12,
+  },
+  fileFilter: (_req, file, cb) => {
+    if (!file.mimetype || !file.mimetype.startsWith("image/")) {
+      cb(new Error("이미지 파일만 업로드할 수 있습니다."));
+      return;
+    }
+
+    cb(null, true);
+  },
+});
 
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
@@ -58,6 +94,7 @@ app.use(
 );
 app.use(express.static(path.join(__dirname, "dist", "public")));
 app.use(express.static(path.join(__dirname, "public")));
+app.use("/uploads", express.static(uploadDir, { maxAge: "7d" }));
 
 function parseCookies(req) {
   const header = typeof req.headers.cookie === "string" ? req.headers.cookie : "";
@@ -610,16 +647,29 @@ app.post("/admin/settings/slots/:slotId", requireAdmin, (req, res) => {
   }
 });
 
-app.post("/admin/settings/rooms", requireAdmin, (req, res) => {
+app.post("/admin/settings/rooms", requireAdmin, upload.any(), (req, res) => {
   try {
+    const fileMap = new Map(
+      (req.files || []).map((file) => [file.fieldname, `/uploads/${file.filename}`]),
+    );
     const rooms = Object.keys(req.body)
-      .filter((key) => key.startsWith("capacity_"))
-      .map((key) => ({
-        roomId: key.slice("capacity_".length),
-        capacity: req.body[key],
-        description: req.body[`description_${key.slice("capacity_".length)}`],
-        imageUrl: req.body[`imageUrl_${key.slice("capacity_".length)}`],
-      }));
+      .filter((key) => key.startsWith("name_"))
+      .map((key) => {
+        const roomId = key.slice("name_".length);
+        const fileField = `imageFile_${roomId}`;
+        const clearImage = req.body[`clearImage_${roomId}`] === "1";
+        const imageUrl = clearImage
+          ? ""
+          : fileMap.get(fileField) || req.body[`imageUrl_${roomId}`];
+
+        return {
+          roomId,
+          name: req.body[key],
+          capacity: req.body[`capacity_${roomId}`],
+          description: req.body[`description_${roomId}`],
+          imageUrl,
+        };
+      });
 
     updateRoomMetadata({ rooms });
 
@@ -646,7 +696,9 @@ app.post("/admin/settings/rooms", requireAdmin, (req, res) => {
 
 app.post("/admin/settings/booking-open", requireAdmin, (req, res) => {
   try {
-    const result = updateBookingOpenTime({
+    const result = updateBookingPolicy({
+      bookingRestrictionEnabled: req.body.bookingRestrictionEnabled,
+      bookingOpenDay: req.body.bookingOpenDay,
       bookingOpenTime: req.body.bookingOpenTime,
     });
 
@@ -657,7 +709,9 @@ app.post("/admin/settings/booking-open", requireAdmin, (req, res) => {
         date: req.body.date,
         page: "settings",
       },
-      `예약 시작 시간을 ${result.value}로 저장했습니다.`,
+      result.restrictionEnabled
+        ? `예약 시작 규칙을 ${result.bookingOpenDay.label} ${result.bookingOpenTime.value}로 저장했습니다.`
+        : "예약 시간 제한을 해제했습니다.",
       "success",
     );
   } catch (error) {
@@ -671,8 +725,90 @@ app.post("/admin/settings/booking-open", requireAdmin, (req, res) => {
   }
 });
 
+app.post("/admin/rooms", requireAdmin, upload.single("roomImageFile"), (req, res) => {
+  try {
+    const result = createRoom({
+      name: req.body.roomName,
+      capacity: req.body.roomCapacity,
+      description: req.body.roomDescription,
+      imageUrl: req.file ? `/uploads/${req.file.filename}` : "",
+    });
+
+    redirectWithFlash(
+      res,
+      "/admin",
+      {
+        date: req.body.date,
+        page: "settings",
+      },
+      `${result.name} 방을 추가했습니다.`,
+      "success",
+    );
+  } catch (error) {
+    renderAdminPage(req, res, {
+      statusCode: 400,
+      message: error.message || "방 추가 중 오류가 발생했습니다.",
+      level: "error",
+      date: req.body.date,
+      page: "settings",
+    });
+  }
+});
+
+app.post("/admin/rooms/:id/delete", requireAdmin, (req, res) => {
+  try {
+    const result = deleteRoom(req.params.id);
+    const message =
+      result.mode === "deleted"
+        ? `${result.room.name} 방을 삭제했습니다.`
+        : `${result.room.name} 방은 기록이 남아 있어 숨김 처리했습니다.`;
+
+    redirectWithFlash(
+      res,
+      "/admin",
+      {
+        date: req.body.date,
+        page: "settings",
+      },
+      message,
+      "success",
+    );
+  } catch (error) {
+    renderAdminPage(req, res, {
+      statusCode: 400,
+      message: error.message || "방 삭제 중 오류가 발생했습니다.",
+      level: "error",
+      date: req.body.date,
+      page: "settings",
+    });
+  }
+});
+
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
+});
+
+app.use((error, req, res, next) => {
+  if (!error) {
+    next();
+    return;
+  }
+
+  const isUploadError =
+    error instanceof multer.MulterError || /이미지 파일만 업로드할 수 있습니다/.test(error.message || "");
+
+  if (!isUploadError) {
+    next(error);
+    return;
+  }
+
+  renderAdminPage(req, res, {
+    statusCode: 400,
+    message: error.message || "이미지 업로드 중 오류가 발생했습니다.",
+    level: "error",
+    date: req.body?.date || req.query?.date,
+    page: "settings",
+  });
 });
 
 app.use((_req, res) => {

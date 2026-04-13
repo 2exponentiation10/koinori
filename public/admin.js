@@ -37,6 +37,7 @@ function initAdminPage(adminState) {
   const settingPanels = Array.from(document.querySelectorAll("[data-setting-slot]"));
   const presetButtons = Array.from(document.querySelectorAll("[data-apply-mode]"));
   const modeInputs = Array.from(document.querySelectorAll(".mode-group input[type='radio']"));
+  const deleteRoomButtons = Array.from(document.querySelectorAll("[data-delete-room]"));
 
   if (!pageButtons.length) {
     return;
@@ -165,6 +166,33 @@ function initAdminPage(adminState) {
         targetInput.checked = true;
         updateModePill(targetInput);
       });
+    });
+  });
+
+  deleteRoomButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const roomId = button.dataset.deleteRoom;
+      const date = button.dataset.deleteDate;
+      const confirmed = window.confirm(
+        "이 방을 삭제하시겠습니까? 예약/설정 이력이 있으면 숨김 처리됩니다.",
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
+      const form = document.createElement("form");
+      form.method = "post";
+      form.action = `/admin/rooms/${roomId}/delete`;
+
+      const dateInput = document.createElement("input");
+      dateInput.type = "hidden";
+      dateInput.name = "date";
+      dateInput.value = date;
+      form.appendChild(dateInput);
+
+      document.body.appendChild(form);
+      form.submit();
     });
   });
 

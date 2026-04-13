@@ -142,58 +142,136 @@
           <input type="hidden" name="date" value="<%= selectedDate %>" />
 
           <div class="selection-banner compact-banner">
-            <strong>예약 시작 시간</strong>
-            <span>주일 기준 3일 전(목요일)에 열리는 시간을 운영자가 직접 바꿀 수 있습니다.</span>
+            <strong>예약 공개 규칙</strong>
+            <span>오픈 요일과 시간을 정하거나, 아예 시간 제한 없이 항상 열리게 할 수 있습니다.</span>
           </div>
 
           <div class="room-meta-grid">
             <article class="room-meta-card room-meta-card-accent">
               <div class="room-meta-card-head">
                 <div>
-                  <strong>현재 오픈 시각</strong>
+                  <strong>현재 공개 상태</strong>
                   <small><%= bookingOpenAtLabel %> 기준으로 공개 화면에 표시됩니다.</small>
                 </div>
               </div>
 
               <label class="field room-meta-field">
-                <span>오픈 시간</span>
-                <input
-                  type="time"
-                  name="bookingOpenTime"
-                  value="<%= bookingOpenTime %>"
-                  required
-                />
+                <span>예약 제한</span>
+                <select name="bookingRestrictionEnabled">
+                  <option value="1" <%= bookingRestrictionEnabled ? 'selected' : '' %>>요일/시간 기준으로 오픈</option>
+                  <option value="0" <%= !bookingRestrictionEnabled ? 'selected' : '' %>>항상 오픈 (제한 없음)</option>
+                </select>
               </label>
+
+              <div class="room-meta-inline-grid">
+                <label class="field room-meta-field">
+                  <span>오픈 요일</span>
+                  <select name="bookingOpenDay">
+                    <% bookingWeekdayOptions.forEach((option) => { %>
+                      <option value="<%= option.value %>" <%= option.selected ? 'selected' : '' %>><%= option.label %></option>
+                    <% }) %>
+                  </select>
+                </label>
+
+                <label class="field room-meta-field">
+                  <span>오픈 시간</span>
+                  <input type="time" name="bookingOpenTime" value="<%= bookingOpenTime %>" />
+                </label>
+              </div>
+
+              <p class="room-meta-hint">
+                예: 목요일 10:00 오픈, 또는 필요 시 항상 오픈으로 전환할 수 있습니다.
+              </p>
             </article>
+
           </div>
 
           <div class="page-actions compact-actions">
-            <button type="submit" class="primary-button">예약 시작 시간 저장</button>
+            <button type="submit" class="primary-button">예약 공개 규칙 저장</button>
           </div>
         </form>
 
-        <form method="post" action="/admin/settings/rooms" class="settings-room-meta-form">
+        <form method="post" action="/admin/rooms" enctype="multipart/form-data" class="settings-room-meta-form room-create-form">
+          <input type="hidden" name="date" value="<%= selectedDate %>" />
+
+          <div class="selection-banner compact-banner">
+            <strong>새 방 추가</strong>
+            <span>추가 즉시 예약 화면과 운영 화면에 반영됩니다.</span>
+          </div>
+
+          <div class="room-meta-grid room-meta-grid-single">
+            <article class="room-meta-card">
+              <div class="room-meta-inline-grid">
+                <label class="field room-meta-field">
+                  <span>방 이름</span>
+                  <input type="text" name="roomName" maxlength="40" placeholder="예: 10번 소망방" required />
+                </label>
+
+                <label class="field room-meta-field">
+                  <span>인실</span>
+                  <input type="number" min="1" max="99" name="roomCapacity" placeholder="예: 6" inputmode="numeric" />
+                </label>
+              </div>
+
+              <label class="field room-meta-field room-meta-field-wide">
+                <span>방 사진 업로드 (선택)</span>
+                <input type="file" name="roomImageFile" accept="image/*" />
+              </label>
+
+              <label class="field room-meta-field room-meta-field-wide">
+                <span>방 설명</span>
+                <textarea name="roomDescription" rows="3" placeholder="예: 소그룹 모임, 리더 모임, 상담에 적합"></textarea>
+              </label>
+
+              <div class="page-actions compact-actions">
+                <button type="submit" class="secondary-button">새 방 추가</button>
+              </div>
+            </article>
+          </div>
+        </form>
+
+        <form method="post" action="/admin/settings/rooms" enctype="multipart/form-data" class="settings-room-meta-form">
           <input type="hidden" name="date" value="<%= selectedDate %>" />
 
           <div class="selection-banner compact-banner">
             <strong>방 기본 정보</strong>
-            <span>인실, 용도 설명, 사진 주소를 저장하면 공개 화면과 관리자 화면에 함께 표시됩니다.</span>
+            <span>이름, 인실, 설명, 사진 파일까지 함께 관리합니다. 삭제가 어려운 방은 숨김 처리됩니다.</span>
           </div>
 
           <div class="room-meta-grid">
             <% schedule.rooms.forEach((room) => { %>
               <article class="room-meta-card">
-                <div class="room-meta-card-head">
+                <div class="room-meta-card-head room-meta-card-head-space">
                   <div>
                     <strong><%= room.name %></strong>
                     <small><%= room.capacity ? `${room.capacity}인실로 저장됨` : '인실 정보 미설정' %></small>
                   </div>
-                  <% if (room.imageUrl) { %>
-                    <img src="<%= room.imageUrl %>" alt="<%= room.name %> 사진" class="room-meta-preview" referrerpolicy="no-referrer" />
-                  <% } else { %>
-                    <div class="room-meta-preview room-meta-preview-empty">사진 없음</div>
-                  <% } %>
+                  <button
+                    type="button"
+                    class="ghost-button danger-button"
+                    data-delete-room="<%= room.id %>"
+                    data-delete-date="<%= selectedDate %>"
+                  >
+                    방 삭제
+                  </button>
                 </div>
+
+                <% if (room.imageUrl) { %>
+                  <img src="<%= room.imageUrl %>" alt="<%= room.name %> 사진" class="room-meta-preview" referrerpolicy="no-referrer" />
+                <% } else { %>
+                  <div class="room-meta-preview room-meta-preview-empty">사진 없음</div>
+                <% } %>
+
+                <label class="field room-meta-field">
+                  <span>방 이름</span>
+                  <input
+                    type="text"
+                    name="name_<%= room.id %>"
+                    value="<%= room.name %>"
+                    maxlength="40"
+                    required
+                  />
+                </label>
 
                 <label class="field room-meta-field">
                   <span>몇 인실</span>
@@ -217,15 +295,22 @@
                   ><%= room.description || '' %></textarea>
                 </label>
 
-                <label class="field room-meta-field room-meta-field-wide">
-                  <span>사진 URL</span>
-                  <input
-                    type="url"
-                    name="imageUrl_<%= room.id %>"
-                    value="<%= room.imageUrl || '' %>"
-                    placeholder="https://..."
-                    inputmode="url"
-                  />
+                <div class="room-meta-inline-grid">
+                  <input type="hidden" name="imageUrl_<%= room.id %>" value="<%= room.imageUrl || '' %>" />
+
+                  <label class="field room-meta-field room-meta-field-wide">
+                    <span>사진 파일 업로드</span>
+                    <input
+                      type="file"
+                      name="imageFile_<%= room.id %>"
+                      accept="image/*"
+                    />
+                  </label>
+                </div>
+
+                <label class="field checkbox-field">
+                  <input type="checkbox" name="clearImage_<%= room.id %>" value="1" />
+                  <span>사진 제거</span>
                 </label>
               </article>
             <% }) %>

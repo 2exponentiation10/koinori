@@ -9,8 +9,8 @@ const ROOM_MODES = {
 const NOTICE_ITEMS = [
   {
     id: "booking-open",
-    title: "목요일 예약 오픈",
-    detail: "오픈 전에는 예약 버튼이 잠겨 있습니다. 정확한 시간은 상단 안내를 확인해 주세요.",
+    title: "예약 오픈 안내",
+    detail: "오픈 전에는 예약 버튼이 잠겨 있습니다. 정확한 요일과 시간은 상단 안내를 확인해 주세요.",
     screens: ["intro"],
   },
   {
@@ -28,7 +28,7 @@ const NOTICE_ITEMS = [
   },
 ];
 
-const ROOMS = [
+const DEFAULT_ROOMS = [
   {
     id: 1,
     name: "1번 사랑방",
@@ -144,7 +144,7 @@ module.exports = {
   APP_TIME_ZONE,
   MIN_ATTENDEES,
   NOTICE_ITEMS,
-  ROOMS,
+  DEFAULT_ROOMS,
   ROOM_MODES,
   TIME_SLOTS,
 };
