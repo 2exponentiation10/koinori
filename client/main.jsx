@@ -265,6 +265,39 @@ function getRecentActionTitle(recentAction) {
   return "";
 }
 
+function getBookingActionButtonCopy(appState) {
+  if (!appState?.bookingRestrictionEnabled) {
+    return "지금 바로 예약 가능";
+  }
+
+  if (appState?.bookingStatus?.open) {
+    return "예약 시작";
+  }
+
+  return `${appState.bookingOpenAtLabel}부터 예약 가능`;
+}
+
+function buildReservationSmsUrl(recentAction) {
+  if (!recentAction?.contact) {
+    return "";
+  }
+
+  const phoneNumber = String(recentAction.contact).replace(/[^\d+]/g, "");
+
+  if (!phoneNumber) {
+    return "";
+  }
+
+  const body = [
+    "[KOINORI 예약 확인]",
+    `${recentAction.communityName} / ${recentAction.requesterName}`,
+    `${recentAction.roomName} ${recentAction.slotLabel} ${recentAction.timeRange}`,
+    `예약번호 ${recentAction.reservationNumber}`,
+  ].join("\n");
+
+  return `sms:${phoneNumber}?body=${encodeURIComponent(body)}`;
+}
+
 function renderSlotSummary(labels, tone) {
   return (
     <span className="room-pick-slot-list">
@@ -534,6 +567,15 @@ function App({ initialState }) {
   }, [screen]);
 
   function handleBrandTap() {
+    if (screen !== "intro") {
+      setWaitlistModalOpen(false);
+      setCancelModalOpen(false);
+      setAdminModalOpen(false);
+      setWaitlistPrompt(null);
+      goToScreen("intro");
+      return;
+    }
+
     tapCountRef.current += 1;
 
     if (tapResetRef.current) {
@@ -558,7 +600,7 @@ function App({ initialState }) {
 
   function openCancelModal() {
     if (!bookingIsOpen) {
-      setFlash({ message: "예약과 취소는 목요일 10시부터 일요일 자정까지만 가능합니다.", level: "info" });
+      setFlash({ message: appState.bookingStatus.message, level: "info" });
       return;
     }
 
@@ -911,6 +953,8 @@ function App({ initialState }) {
       return null;
     }
 
+    const smsUrl = buildReservationSmsUrl(recentAction);
+
     return (
       <article className={`activity-card activity-card-${recentAction.type}`}>
         <strong>{getRecentActionTitle(recentAction)}</strong>
@@ -924,6 +968,13 @@ function App({ initialState }) {
         <p className="activity-help">
           예약 현황에서 같은 방의 다른 타임 상태를 확인할 수 있고, 예약 시간 전까지는 취소도 가능합니다.
         </p>
+        {smsUrl ? (
+          <div className="page-actions compact-actions compact-actions-top">
+            <a className="secondary-button" href={smsUrl}>
+              확인 문자 앱 열기
+            </a>
+          </div>
+        ) : null}
       </article>
     );
   }
@@ -1043,7 +1094,7 @@ function App({ initialState }) {
             ) : (
               <div className="page-actions intro-actions">
                 <button type="button" className="primary-button" disabled>
-                  목요일 10:00부터 예약과 취소 가능
+                  {getBookingActionButtonCopy(appState)}
                 </button>
                 <button type="button" className="secondary-button" onClick={() => goToScreen("status")}>
                   예약 현황 보기

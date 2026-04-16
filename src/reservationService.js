@@ -1501,8 +1501,103 @@ function buildDashboard(dateInput) {
   };
 }
 
+function formatSheetCell(roomSlot) {
+  if (!roomSlot) {
+    return "";
+  }
+
+  if (roomSlot.status === "reserved" && roomSlot.reservation) {
+    const attendeesLabel =
+      Number.isInteger(roomSlot.reservation.attendees) && roomSlot.reservation.attendees > 1
+        ? ` ${roomSlot.reservation.attendees}명`
+        : "";
+
+    return `${roomSlot.reservation.communityName} ${roomSlot.reservation.requesterName}${attendeesLabel}`.trim();
+  }
+
+  if (roomSlot.status === "fixed") {
+    return `*${roomSlot.label || roomSlot.title || "고정 사용"}`;
+  }
+
+  if (roomSlot.status === "closed") {
+    return "운영 안 함";
+  }
+
+  return "";
+}
+
+function chunkRoomsForSheet(rooms, columnCount = 3) {
+  const chunks = [];
+
+  for (let index = 0; index < rooms.length; index += columnCount) {
+    chunks.push(rooms.slice(index, index + columnCount));
+  }
+
+  return chunks;
+}
+
+function buildReservationSheet(dateInput) {
+  const dashboard = buildDashboard(dateInput);
+  const slotLegend = dashboard.slotDetails.map((slot) => ({
+    id: slot.id,
+    label: slot.label,
+    timeRange: slot.timeRange,
+  }));
+  const roomColumns = chunkRoomsForSheet(dashboard.schedule.rooms);
+  const waitlistRows = dashboard.schedule.waitlists.flatMap((waitlist) => {
+    const roomRows = waitlist.rooms.flatMap((room) =>
+      room.items.map((reservation, index) => ({
+        slotLabel: waitlist.slot.label,
+        roomName: room.roomName,
+        order: index + 1,
+        communityName: reservation.communityName,
+        requesterName: reservation.requesterName,
+        contact: reservation.contact || "",
+      })),
+    );
+
+    const legacyRows = waitlist.legacyItems.map((reservation, index) => ({
+      slotLabel: waitlist.slot.label,
+      roomName: "방 미지정",
+      order: index + 1,
+      communityName: reservation.communityName,
+      requesterName: reservation.requesterName,
+      contact: reservation.contact || "",
+    }));
+
+    return [...roomRows, ...legacyRows];
+  });
+
+  return {
+    selectedDate: dashboard.selectedDate,
+    selectedDateLabel: dashboard.selectedDateLabel,
+    bookingOpenAtLabel: dashboard.bookingOpenAtLabel,
+    summary: dashboard.summary,
+    slotLegend,
+    roomColumns: roomColumns.map((rooms) =>
+      rooms.map((room) => ({
+        id: room.id,
+        name: room.name,
+        capacity: room.capacity,
+        slots: slotLegend.map((slot) => {
+          const roomSlot = room.slots.find((entry) => entry.slot.slotId === slot.id);
+
+          return {
+            slotId: slot.id,
+            slotLabel: slot.label,
+            timeRange: slot.timeRange,
+            value: formatSheetCell(roomSlot),
+          };
+        }),
+      })),
+    ),
+    waitlistRows,
+  };
+}
+
 module.exports = {
   buildDashboard,
+  buildReservationSheet,
   cancelReservation,
   cancelReservationByLookup,
   createRoom,

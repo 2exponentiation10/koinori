@@ -10,13 +10,13 @@
   <body class="mobile-app admin-app">
     <main class="page-shell">
       <header class="app-header admin-header">
-        <div class="brand-panel">
+        <a href="/admin?date=<%= selectedDate %>&page=summary" class="brand-panel brand-panel-link">
           <span class="brand-wordmark admin-wordmark">KOINORI</span>
           <div class="brand-copy">
             <strong>운영 화면</strong>
             <small><%= selectedDateLabel %> 운영 기준</small>
           </div>
-        </div>
+        </a>
 
         <article class="hero-card admin-hero-card">
           <div class="hero-row">
@@ -61,6 +61,10 @@
         </div>
 
         <form class="inline-form compact-form" method="get" action="/admin">
+          <input type="hidden" name="page" value="<%= currentAdminPage %>" />
+          <% if (currentAdminPage === 'slots') { %>
+            <input type="hidden" name="settingSlot" value="<%= currentSettingSlotId %>" />
+          <% } %>
           <label class="field">
             <span>운영 날짜</span>
             <input type="date" name="date" value="<%= selectedDate %>" required />
@@ -71,7 +75,7 @@
         <div class="choice-grid choice-grid-dates">
           <% sundayOptions.forEach((option) => { %>
             <a
-              href="/admin?date=<%= option.date %>"
+              href="/admin?date=<%= option.date %>&page=<%= currentAdminPage %><%= currentAdminPage === 'slots' ? `&settingSlot=${currentSettingSlotId}` : '' %>"
               class="choice-card <%= option.selected ? 'choice-card-active' : '' %>"
             >
               <strong><%= option.label %></strong>
@@ -82,13 +86,16 @@
       </section>
 
       <nav class="page-tabs" aria-label="관리자 페이지">
-        <button type="button" class="page-tab is-active" data-go-page="summary">1. 요약</button>
-        <button type="button" class="page-tab" data-go-page="settings">2. 방 설정</button>
-        <button type="button" class="page-tab" data-go-page="control">3. 예약자</button>
-        <button type="button" class="page-tab" data-go-page="waitlist">4. 대기자</button>
+        <button type="button" class="page-tab <%= currentAdminPage === 'summary' ? 'is-active' : '' %>" data-go-page="summary">1. 요약</button>
+        <button type="button" class="page-tab <%= currentAdminPage === 'sheet' ? 'is-active' : '' %>" data-go-page="sheet">2. 현황표</button>
+        <button type="button" class="page-tab <%= currentAdminPage === 'booking' ? 'is-active' : '' %>" data-go-page="booking">3. 예약 공개</button>
+        <button type="button" class="page-tab <%= currentAdminPage === 'rooms' ? 'is-active' : '' %>" data-go-page="rooms">4. 방 관리</button>
+        <button type="button" class="page-tab <%= currentAdminPage === 'slots' ? 'is-active' : '' %>" data-go-page="slots">5. 타임 설정</button>
+        <button type="button" class="page-tab <%= currentAdminPage === 'control' ? 'is-active' : '' %>" data-go-page="control">6. 예약자</button>
+        <button type="button" class="page-tab <%= currentAdminPage === 'waitlist' ? 'is-active' : '' %>" data-go-page="waitlist">7. 대기자</button>
       </nav>
 
-      <section class="page-card is-active compact-card" data-page="summary">
+      <section class="page-card <%= currentAdminPage === 'summary' ? 'is-active' : '' %> compact-card" data-page="summary">
         <div class="section-heading compact-heading">
           <div>
             <p class="eyebrow">SUMMARY</p>
@@ -129,13 +136,79 @@
         </div>
       </section>
 
-      <section class="page-card compact-card" data-page="settings">
+      <section class="page-card <%= currentAdminPage === 'sheet' ? 'is-active' : '' %> compact-card" data-page="sheet">
         <div class="section-heading compact-heading">
           <div>
-            <p class="eyebrow">SETTINGS</p>
-            <h2>방 상태 설정</h2>
+            <p class="eyebrow">RESERVATION SHEET</p>
+            <h2>예약 현황표</h2>
           </div>
-          <p class="section-guide">저장한 설정은 같은 타임의 다음 주일에도 이어집니다.</p>
+          <p class="section-guide">예배 운영표처럼 한눈에 보고 인쇄하거나 CSV로 내릴 수 있습니다.</p>
+        </div>
+
+        <div class="page-actions compact-actions compact-actions-wrap">
+          <a class="secondary-button" href="/admin/sheet/print?date=<%= selectedDate %>" target="_blank" rel="noreferrer">인쇄 화면 열기</a>
+          <a class="primary-button" href="/admin/sheet.csv?date=<%= selectedDate %>">CSV 다운로드</a>
+        </div>
+
+        <article class="sheet-preview-card">
+          <header class="sheet-preview-head">
+            <div>
+              <strong><%= sheet.selectedDateLabel %> [방 예약현황표]</strong>
+              <small>예약 공개 기준: <%= sheet.bookingOpenAtLabel %></small>
+            </div>
+            <div class="sheet-slot-legend">
+              <% sheet.slotLegend.forEach((slot) => { %>
+                <span><strong><%= slot.label %></strong> <%= slot.timeRange %></span>
+              <% }) %>
+            </div>
+          </header>
+
+          <div class="sheet-grid">
+            <% sheet.roomColumns.forEach((columnGroup) => { %>
+              <div class="sheet-column">
+                <% columnGroup.forEach((room) => { %>
+                  <table class="sheet-room-table">
+                    <thead>
+                      <tr>
+                        <th colspan="2"><%= room.name %><%= room.capacity ? ` · ${room.capacity}인실` : '' %></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <% room.slots.forEach((slot) => { %>
+                        <tr>
+                          <th><%= slot.slotLabel %></th>
+                          <td><%= slot.value || '-' %></td>
+                        </tr>
+                      <% }) %>
+                    </tbody>
+                  </table>
+                <% }) %>
+              </div>
+            <% }) %>
+          </div>
+
+          <div class="sheet-waitlist-panel">
+            <strong>대기 명단</strong>
+            <% if (!sheet.waitlistRows.length) { %>
+              <p>현재 대기 명단이 없습니다.</p>
+            <% } else { %>
+              <ul class="sheet-waitlist-list">
+                <% sheet.waitlistRows.forEach((row) => { %>
+                  <li><strong><%= row.slotLabel %></strong> · <%= row.roomName %> · <%= row.order %>순번 · <%= row.communityName %> / <%= row.requesterName %><%= row.contact ? ` / ${row.contact}` : '' %></li>
+                <% }) %>
+              </ul>
+            <% } %>
+          </div>
+        </article>
+      </section>
+
+      <section class="page-card <%= currentAdminPage === 'booking' ? 'is-active' : '' %> compact-card" data-page="booking">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">BOOKING POLICY</p>
+            <h2>예약 공개 설정</h2>
+          </div>
+          <p class="section-guide">공개되는 시작 시각과 문구 기준을 여기서 관리합니다.</p>
         </div>
 
         <form method="post" action="/admin/settings/booking-open" class="settings-room-meta-form">
@@ -190,6 +263,16 @@
             <button type="submit" class="primary-button">예약 공개 규칙 저장</button>
           </div>
         </form>
+      </section>
+
+      <section class="page-card <%= currentAdminPage === 'rooms' ? 'is-active' : '' %> compact-card" data-page="rooms">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">ROOMS</p>
+            <h2>방 관리</h2>
+          </div>
+          <p class="section-guide">방 추가, 이름 변경, 인실, 사진, 설명을 여기서 관리합니다.</p>
+        </div>
 
         <form method="post" action="/admin/rooms" enctype="multipart/form-data" class="settings-room-meta-form room-create-form">
           <input type="hidden" name="date" value="<%= selectedDate %>" />
@@ -320,10 +403,20 @@
             <button type="submit" class="primary-button">방 정보 저장</button>
           </div>
         </form>
+      </section>
+
+      <section class="page-card <%= currentAdminPage === 'slots' ? 'is-active' : '' %> compact-card" data-page="slots">
+        <div class="section-heading compact-heading">
+          <div>
+            <p class="eyebrow">TIME SLOTS</p>
+            <h2>타임별 방 사용 설정</h2>
+          </div>
+          <p class="section-guide">타임별로 예약 가능, 고정 사용, 운영 안 함을 분리 관리합니다.</p>
+        </div>
 
         <div class="slot-chip-row">
           <% slotDetails.forEach((slot) => { %>
-            <button type="button" class="slot-chip-button <%= slot.id === defaultSlotId ? 'is-active' : '' %>" data-setting-slot-tab="<%= slot.id %>">
+            <button type="button" class="slot-chip-button <%= slot.id === currentSettingSlotId ? 'is-active' : '' %>" data-setting-slot-tab="<%= slot.id %>">
               <strong><%= slot.label %></strong>
               <span><%= slot.timeRange %></span>
             </button>
@@ -334,7 +427,7 @@
           <form
             method="post"
             action="/admin/settings/slots/<%= slot.id %>"
-            class="settings-panel <%= slot.id === defaultSlotId ? 'is-active' : '' %>"
+            class="settings-panel <%= currentAdminPage === 'slots' && slot.id === currentSettingSlotId ? 'is-active' : '' %>"
             data-setting-slot="<%= slot.id %>"
           >
             <input type="hidden" name="date" value="<%= selectedDate %>" />
@@ -423,7 +516,7 @@
         <% }) %>
       </section>
 
-      <section class="page-card compact-card" data-page="control">
+      <section class="page-card <%= currentAdminPage === 'control' ? 'is-active' : '' %> compact-card" data-page="control">
         <div class="section-heading compact-heading">
           <div>
             <p class="eyebrow">RESERVATIONS</p>
@@ -460,7 +553,17 @@
 
                 <form method="post" action="/admin/reservations/<%= reservation.id %>/cancel">
                   <input type="hidden" name="date" value="<%= selectedDate %>" />
-                  <button type="submit" class="danger-button">예약 취소</button>
+                  <div class="page-actions compact-actions compact-actions-wrap">
+                    <% if (reservation.contact) { %>
+                      <a
+                        class="secondary-button"
+                        href="sms:<%= reservation.contact.replace(/[^\d+]/g, '') %>?body=<%= encodeURIComponent(`[KOINORI 예약 확인]\n${reservation.communityName} / ${reservation.requesterName}\n${reservation.roomName} ${reservation.slot.label} ${reservation.slot.timeRange}\n예약번호 ${reservation.reservationNumber}`) %>"
+                      >
+                        문자 앱 열기
+                      </a>
+                    <% } %>
+                    <button type="submit" class="danger-button">예약 취소</button>
+                  </div>
                 </form>
               </article>
             <% }) %>
@@ -468,7 +571,7 @@
         <% } %>
       </section>
 
-      <section class="page-card compact-card" data-page="waitlist">
+      <section class="page-card <%= currentAdminPage === 'waitlist' ? 'is-active' : '' %> compact-card" data-page="waitlist">
         <div class="section-heading compact-heading">
           <div>
             <p class="eyebrow">WAITLIST</p>

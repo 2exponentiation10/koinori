@@ -26,7 +26,7 @@ function setActivePage(pageName, options = {}) {
     }
   });
 
-  if (options.scroll !== false) {
+  if (options.scroll === true) {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 }
@@ -67,7 +67,7 @@ function initAdminPage(adminState) {
       page: activePage,
       settingSlotId: activeSettingSlotId,
     };
-    const url = buildAdminUrl(activePage, activePage === "settings" ? activeSettingSlotId : null);
+    const url = buildAdminUrl(activePage, activePage === "slots" ? activeSettingSlotId : null);
 
     if (!historyReady || mode === "replace") {
       window.history.replaceState(state, "", url);
@@ -94,7 +94,7 @@ function initAdminPage(adminState) {
       panel.classList.toggle("is-active", Number(panel.dataset.settingSlot) === Number(slotId));
     });
 
-    if (options.history !== false && activePage === "settings") {
+    if (options.history !== false && activePage === "slots") {
       syncHistory(options.historyMode || "push");
     }
   }
@@ -127,7 +127,7 @@ function initAdminPage(adminState) {
   pageButtons.forEach((button) => {
     button.addEventListener("click", () => {
       activePage = button.dataset.goPage;
-      setActivePage(activePage);
+      setActivePage(activePage, { scroll: false });
       syncHistory("push");
     });
   });

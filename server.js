@@ -11,6 +11,7 @@ const { dataDir } = require("./src/db");
 const { buildPublicAppState } = require("./src/publicAppState");
 const {
   buildDashboard,
+  buildReservationSheet,
   cancelReservation,
   cancelReservationByLookup,
   createRoom,
@@ -298,9 +299,11 @@ function handlePublicReservation(req, res, options = {}) {
             type: result.status,
             reservationNumber: result.reservationNumber,
             communityName: req.body.communityName,
+            requesterName: req.body.requesterName,
             roomName: result.room.name,
             slotLabel: result.slot.label,
             timeRange: result.slot.timeRange,
+            contact: req.body.contact,
             contactLastFour: result.contactLastFour,
           },
         }),
@@ -429,10 +432,11 @@ function handlePublicCancellation(req, res, options = {}) {
 
 function renderAdminPage(req, res, options = {}) {
   const dashboard = buildDashboard(options.date || req.query.date);
+  const sheet = buildReservationSheet(options.date || req.query.date);
   const flash = readFlash(req);
   const initialPage = normalizePage(
     options.page || req.query.page,
-    ["summary", "settings", "control", "waitlist"],
+    ["summary", "sheet", "booking", "rooms", "slots", "control", "waitlist"],
     "summary",
   );
   const initialSettingSlotId = Number(
@@ -446,6 +450,7 @@ function renderAdminPage(req, res, options = {}) {
 
   res.status(options.statusCode || 200).render("admin", {
     ...dashboard,
+    sheet,
     noticeItems: NOTICE_ITEMS,
     minAttendees: MIN_ATTENDEES,
     adminAuthEnabled,
@@ -458,7 +463,67 @@ function renderAdminPage(req, res, options = {}) {
       initialPage,
       initialSettingSlotId,
     }),
+    currentAdminPage: initialPage,
+    currentSettingSlotId: initialSettingSlotId,
   });
+}
+
+function renderAdminSheetPrint(req, res, options = {}) {
+  const sheet = buildReservationSheet(options.date || req.query.date);
+
+  res.status(options.statusCode || 200).render("admin-sheet-print", {
+    ...sheet,
+  });
+}
+
+function escapeCsvCell(value) {
+  const normalized = String(value ?? "");
+
+  if (/[",\n]/.test(normalized)) {
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+
+  return normalized;
+}
+
+function sendReservationSheetCsv(req, res, options = {}) {
+  const sheet = buildReservationSheet(options.date || req.query.date);
+  const rows = [];
+
+  rows.push([`${sheet.selectedDateLabel} 방 예약 현황표`]);
+  rows.push(["타임", ...sheet.slotLegend.map((slot) => `${slot.label} ${slot.timeRange}`)]);
+
+  sheet.roomColumns.forEach((columnGroup) => {
+    columnGroup.forEach((room) => {
+      rows.push([
+        `${room.name}${room.capacity ? ` (${room.capacity}인실)` : ""}`,
+        ...room.slots.map((slot) => slot.value),
+      ]);
+    });
+  });
+
+  if (sheet.waitlistRows.length > 0) {
+    rows.push([]);
+    rows.push(["대기 명단"]);
+    rows.push(["타임", "방", "순번", "공동체", "신청자", "연락처"]);
+    sheet.waitlistRows.forEach((row) => {
+      rows.push([
+        row.slotLabel,
+        row.roomName,
+        row.order,
+        row.communityName,
+        row.requesterName,
+        row.contact,
+      ]);
+    });
+  }
+
+  const csv = rows.map((row) => row.map(escapeCsvCell).join(",")).join("\n");
+  const fileName = `koinori-sheet-${sheet.selectedDate}.csv`;
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.send(`\uFEFF${csv}`);
 }
 
 function renderAdminLoginPage(req, res, options = {}) {
@@ -508,6 +573,14 @@ app.post("/api/reservations/cancel", (req, res) => {
 
 app.get("/admin", requireAdmin, (req, res) => {
   renderAdminPage(req, res);
+});
+
+app.get("/admin/sheet/print", requireAdmin, (req, res) => {
+  renderAdminSheetPrint(req, res);
+});
+
+app.get("/admin/sheet.csv", requireAdmin, (req, res) => {
+  sendReservationSheetCsv(req, res);
 });
 
 app.get("/admin/login", (req, res) => {
@@ -580,9 +653,9 @@ app.post("/admin/reservations/:id/cancel", requireAdmin, (req, res) => {
     redirectWithFlash(
       res,
       "/admin",
-      {
-        date: result.cancelled.reservationDate,
-        page: "control",
+        {
+          date: result.cancelled.reservationDate,
+          page: "control",
       },
       `${result.cancelled.communityName} 예약을 취소했습니다.${promotedMessage}`,
       "success",
@@ -627,9 +700,9 @@ app.post("/admin/settings/slots/:slotId", requireAdmin, (req, res) => {
     redirectWithFlash(
       res,
       "/admin",
-      {
-        date: result.reservationDate,
-        page: "settings",
+        {
+          date: result.reservationDate,
+        page: "slots",
         settingSlot: result.slot.id,
       },
       `${result.slot.label} 방 운영 설정을 저장했습니다.${promotedMessage}`,
@@ -641,7 +714,7 @@ app.post("/admin/settings/slots/:slotId", requireAdmin, (req, res) => {
       message: error.message || "방 운영 설정 저장 중 오류가 발생했습니다.",
       level: "error",
       date: reservationDate,
-      page: "settings",
+      page: "slots",
       settingSlot: slotId,
     });
   }
@@ -678,7 +751,7 @@ app.post("/admin/settings/rooms", requireAdmin, upload.any(), (req, res) => {
       "/admin",
       {
         date: req.body.date,
-        page: "settings",
+        page: "rooms",
       },
       "방 정보를 저장했습니다.",
       "success",
@@ -689,7 +762,7 @@ app.post("/admin/settings/rooms", requireAdmin, upload.any(), (req, res) => {
       message: error.message || "방 정보 저장 중 오류가 발생했습니다.",
       level: "error",
       date: req.body.date,
-      page: "settings",
+      page: "rooms",
     });
   }
 });
@@ -707,7 +780,7 @@ app.post("/admin/settings/booking-open", requireAdmin, (req, res) => {
       "/admin",
       {
         date: req.body.date,
-        page: "settings",
+        page: "booking",
       },
       result.restrictionEnabled
         ? `예약 시작 규칙을 ${result.bookingOpenDay.label} ${result.bookingOpenTime.value}로 저장했습니다.`
@@ -720,7 +793,7 @@ app.post("/admin/settings/booking-open", requireAdmin, (req, res) => {
       message: error.message || "예약 시작 시간 저장 중 오류가 발생했습니다.",
       level: "error",
       date: req.body.date,
-      page: "settings",
+      page: "booking",
     });
   }
 });
@@ -739,7 +812,7 @@ app.post("/admin/rooms", requireAdmin, upload.single("roomImageFile"), (req, res
       "/admin",
       {
         date: req.body.date,
-        page: "settings",
+        page: "rooms",
       },
       `${result.name} 방을 추가했습니다.`,
       "success",
@@ -750,7 +823,7 @@ app.post("/admin/rooms", requireAdmin, upload.single("roomImageFile"), (req, res
       message: error.message || "방 추가 중 오류가 발생했습니다.",
       level: "error",
       date: req.body.date,
-      page: "settings",
+      page: "rooms",
     });
   }
 });
@@ -768,7 +841,7 @@ app.post("/admin/rooms/:id/delete", requireAdmin, (req, res) => {
       "/admin",
       {
         date: req.body.date,
-        page: "settings",
+        page: "rooms",
       },
       message,
       "success",
@@ -779,7 +852,7 @@ app.post("/admin/rooms/:id/delete", requireAdmin, (req, res) => {
       message: error.message || "방 삭제 중 오류가 발생했습니다.",
       level: "error",
       date: req.body.date,
-      page: "settings",
+      page: "rooms",
     });
   }
 });
@@ -807,7 +880,7 @@ app.use((error, req, res, next) => {
     message: error.message || "이미지 업로드 중 오류가 발생했습니다.",
     level: "error",
     date: req.body?.date || req.query?.date,
-    page: "settings",
+    page: "rooms",
   });
 });
 

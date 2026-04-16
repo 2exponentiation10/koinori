@@ -125,6 +125,7 @@ function buildPublicAppState(options = {}) {
     selectedDateLabel: dashboard.selectedDateLabel,
     currentTimeLabel: dashboard.currentTimeLabel,
     bookingOpenAtLabel: dashboard.bookingOpenAtLabel,
+    bookingRestrictionEnabled: dashboard.bookingRestrictionEnabled,
     bookingStatus: dashboard.bookingStatus,
     serverNowIso: dashboard.currentTimeIso,
     bookingOpenAtIso: dashboard.bookingOpenAtIso,
